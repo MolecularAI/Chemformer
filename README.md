@@ -2,6 +2,8 @@
 
 The MolBART project aims to pre-train a BART transformer language model [[1]](#1) on molecular SMILES strings [[2]](#2) by optimising a de-noising objective. We hypothesise that pre-training will lead to improved generalisation, performance, training speed and validity on downstream fine-tuned tasks. We intend to test the pre-trained model on downstream tasks such as reaction prediction, retrosynthetic prediction, molecular optimisation and molecular property prediction.
 
+We have now published our results in a pre-print [[3]](#3) and will make the models and datasets available [here](https://az.box.com/s/7eci3nd9vy0xplqniitpk02rbg9q2zcq).
+
 
 ## Installation
 
@@ -74,3 +76,8 @@ arXiv preprint arXiv:1910.13461 (2019).
 Weininger, David.
 "SMILES, a chemical language and information system. 1. Introduction to methodology and encoding rules."
 Journal of chemical information and computer sciences 28.1 (1988): 31-36.
+
+<a id="3">[3]</a>
+Irwin, Ross, et al.
+"Chemformer: A Pre-Trained Transformer for Computational Chemistry."
+ChemRxiv (2021). doi:10.33774/chemrxiv-2021-v2pnn
