@@ -1,20 +1,22 @@
 # MolBART
 
-The MolBART project aims to pre-train a BART transformer language model [[1]](#1) on molecular SMILES strings [[2]](#2) by optimising a de-noising objective. We hypothesise that pre-training will lead to improved generalisation, performance, training speed and validity on downstream fine-tuned tasks. We intend to test the pre-trained model on downstream tasks such as reaction prediction, retrosynthetic prediction, molecular optimisation and molecular property prediction.
+The MolBART project aims to pre-train a BART transformer language model [[1]](#1) on molecular SMILES strings [[2]](#2) by optimising a de-noising objective. We hypothesised that pre-training will lead to improved generalisation, performance, training speed and validity on downstream fine-tuned tasks. We tested the pre-trained model on downstream tasks such as reaction prediction, retrosynthetic prediction, molecular optimisation and molecular property prediction.
 
 We have now published our results in a pre-print [[3]](#3) and will make the models and datasets available [here](https://az.box.com/s/7eci3nd9vy0xplqniitpk02rbg9q2zcq).
 
 
 ## Installation
 
-Firstly, pysmilesutils must be downloaded, then the project dependencies can be installed as follows:
+
+The project dependencies can be installed as follows:
 - `conda create --name molbart rdkit -c rdkit`
 - `conda activate molbart`
 - `conda install pytorch==1.8.0 torchvision cudatoolkit=11.1 -c pytorch -c nvidia`
 - `conda install gcc_linux-64 gxx_linux-64 mpi4py`
 - `pip install -r requirements.txt`
-- `cd ../pysmilesutils && python setup.py install`
 
+[pysmilesutils](https://github.com/MolecularAI/pysmilesutils) must also be downloaded and installed. It can be done directly with pip
+- `python -m pip install git+https://github.com/MolecularAI/pysmilesutils.git`
 
 ## Code
 
