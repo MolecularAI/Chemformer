@@ -1,6 +1,6 @@
 # Training of regression models from pre-trained MolBART models
 
-
+The `prop_bart_vocab.txt` file is the vocabulary for regression modeling of the Chemformer. This vocabulary except from the `bart_vocab.txt` vocabulary contains the tokens for the 133 QSAR tasks as gene symbols, and the three physical chemistry properties.
 
 The `finetune_regression_modules.py` file contains classes of the Data Helpers and Models for training the Chemformer on downstream Regression tasks. Most of these classes inherit from classes which are created in `molbart` implementation.
 
