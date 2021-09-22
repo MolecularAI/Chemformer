@@ -6,7 +6,7 @@ from rdkit import Chem
 from functools import partial
 from typing import List, Optional
 from torch.utils.data import DataLoader
-from pysmilesutils.augment import MolRandomizer
+from pysmilesutils.augment import MolAugmenter
 
 from molbart.tokeniser import MolEncTokeniser
 from molbart.data.util import TokenSampler
@@ -202,7 +202,7 @@ class MoleculeDataModule(_AbsDataModule):
 
         if augment:
             print("Using molecule data module with augmentations.")
-            self.aug = MolRandomizer() 
+            self.aug = MolAugmenter() 
         else:
             print("No molecular augmentation.")
             self.aug = None

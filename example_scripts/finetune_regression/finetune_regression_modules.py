@@ -615,7 +615,7 @@ class EncoderOfBARTModel(_AbsTransformerModel):
             num_steps,
             max_seq_len,
             dropout,
-            schedule=schedule,
+            #schedule=schedule,
             warm_up_steps=warm_up_steps,
             **kwargs
         )

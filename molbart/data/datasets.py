@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Optional
 from torch.utils.data import Dataset
 
-from pysmilesutils.augment import MolRandomizer
+from pysmilesutils.augment import MolAugmenter
 
 
 class _AbsDataset(Dataset):
@@ -62,7 +62,7 @@ class ReactionDataset(_AbsDataset):
         self.items = items
         self.transform = transform
         self.aug_prob = aug_prob
-        self.aug = MolRandomizer() 
+        self.aug = MolAugmenter() 
 
     def __len__(self):
         return len(self.reactants)

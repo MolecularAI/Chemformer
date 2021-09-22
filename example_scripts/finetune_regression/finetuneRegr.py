@@ -68,7 +68,7 @@ def load_model(args, vocab_size, total_steps, pad_token_idx, tokeniser):
         premodel=premodel,
         epochs=args.epochs,
         batch_size=args.batch_size,
-        h_feedforward=args.h_feedfoward,
+        h_feedforward=args.h_feedforward,
         lr=args.lr,
         weight_decay=args.weight_decay,
         activation='gelu',
@@ -220,7 +220,7 @@ def main(args):
     print("Finished model.")
 
     print("Building trainer...")
-    trainer = build_trainer(args, model)
+    trainer = build_trainer(args)
     print("Finished trainer.")
 
     print("Fitting data module to trainer")
