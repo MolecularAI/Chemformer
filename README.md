@@ -24,7 +24,7 @@ The following is an example run through of how to run the Chemformer code on the
 
 1. Create a Chemformer conda environment, as above.
 1. Download the dataset of interest and store it locally (let's say ../data/uspto_50.pickle).
-1. Download a pre-trained Chemformer model and sotre it locally (let's say ../models/pre-trained/combined.ckpt).
+1. Download a pre-trained Chemformer model and store it locally (let's say ../models/pre-trained/combined.ckpt).
 1. Update the `fine_tune.sh` shell script in the example_scripts directory (or create your own) with the paths to your model and dataset, as well as the values of hyperparameters you wish to pass to the script.
 1. Run the `fine_tune.sh` script.
 
