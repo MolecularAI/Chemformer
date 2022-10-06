@@ -7,6 +7,7 @@ from functools import partial
 from typing import List, Optional
 from torch.utils.data import DataLoader
 from pysmilesutils.augment import MolAugmenter
+import multiprocessing
 
 from molbart.tokeniser import MolEncTokeniser
 from molbart.data.util import TokenSampler
@@ -51,9 +52,10 @@ class _AbsDataModule(pl.LightningDataModule):
         self.test_idxs = test_idxs
         self.split_perc = split_perc
         self.pin_memory = pin_memory
-
-        self._num_workers = len(os.sched_getaffinity(0))
-
+        # The following works on Linux but not on Windows/OSX
+#         self._num_workers = len(os.sched_getaffinity(0))
+        # Workaround is to get CPU count directly with multiprocessing
+        self._num_workers = multiprocessing.cpu_count()
         self.train_dataset = None
         self.val_dataset = None
         self.test_dataset = None
