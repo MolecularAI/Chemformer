@@ -110,7 +110,7 @@ def main(args):
 
     print("Building data module...")
     dm = util.build_molecule_datamodule(args, dataset, tokeniser)
-    num_available_cpus = len(os.sched_getaffinity(0))
+    num_available_cpus = os.cpu_count()
     num_workers = num_available_cpus // args.gpus
     dm._num_workers = num_workers
     print(f"Using {str(num_workers)} workers for data module.")
