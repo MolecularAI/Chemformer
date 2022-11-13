@@ -117,16 +117,18 @@ def get_targs_preds(model, dl):
     targs = []
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
     model.to(device)
-    for i, batch in enumerate(iter(dl)):
-        batch['encoder_input'] = batch['encoder_input'].to(device) 
-        batch['encoder_pad_mask'] = batch['encoder_pad_mask'].to(device) 
-        batch['target'] = batch['target'].to(device) 
-        
-        batch_preds = model(batch).squeeze(dim=1).tolist()
-        batch_targs = batch['target'].squeeze(dim=1).tolist()
-        
-        preds.append(batch_preds)
-        targs.append(batch_targs)
+    model.eval()
+    with torch.no_grad():
+        for i, batch in enumerate(iter(dl)):
+            batch['encoder_input'] = batch['encoder_input'].to(device) 
+            batch['encoder_pad_mask'] = batch['encoder_pad_mask'].to(device) 
+            batch['target'] = batch['target'].to(device) 
+
+            batch_preds = model(batch).squeeze(dim=1).tolist()
+            batch_targs = batch['target'].squeeze(dim=1).tolist()
+
+            preds.append(batch_preds)
+            targs.append(batch_targs)
         
     targs = list(itertools.chain.from_iterable(targs))
     preds = list(itertools.chain.from_iterable(preds))
