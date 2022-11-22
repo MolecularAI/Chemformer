@@ -52,7 +52,7 @@ class _AbsDataModule(pl.LightningDataModule):
         self.split_perc = split_perc
         self.pin_memory = pin_memory
 
-        self._num_workers = os.cpu_count()
+        self._num_workers = len(os.sched_getaffinity(0))
 
         self.train_dataset = None
         self.val_dataset = None
