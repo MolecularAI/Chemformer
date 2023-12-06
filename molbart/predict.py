@@ -1,69 +1,16 @@
-import torch
-import pickle
 import argparse
-import pandas as pd
-from rdkit import Chem
 from pathlib import Path
 
-import molbart.util as util
-from molbart.decoder import DecodeSampler
-from molbart.models.pre_train import BARTModel
-from molbart.data.datasets import ReactionDataset
-from molbart.data.datamodules import FineTuneReactionDataModule
+import pandas as pd
 
+import molbart.modules.util as util
+from molbart.models import Chemformer
+from molbart.modules.data.base import SimpleReactionListDataModule
+from molbart.modules.decoder import DecodeSampler
+from molbart.modules.tokenizer import ChemformerTokenizer
 
 DEFAULT_BATCH_SIZE = 64
 DEFAULT_NUM_BEAMS = 10
-
-
-class SmilesError(Exception):
-    def __init__(self, idx, smi):
-        message = f"RDKit could not parse smiles {smi} at index {idx}"
-        super().__init__(message)
-
-
-def build_dataset(args):
-    text = Path(args.reactants_path).read_text()
-    smiles = text.split("\n")
-    smiles = [smi for smi in smiles if smi != "" and smi is not None]
-    dataset = ReactionDataset(smiles, smiles)
-    return dataset
-
-
-def build_datamodule(args, dataset, tokeniser, max_seq_len):
-    test_idxs = range(len(dataset))
-    dm = FineTuneReactionDataModule(
-        dataset,
-        tokeniser,
-        args.batch_size,
-        max_seq_len,
-        val_idxs=[],
-        test_idxs=test_idxs
-    )
-    return dm
-
-
-def predict(model, test_loader):
-    device = "cuda:0" if util.use_gpu else "cpu"
-    model = model.to(device)
-    model.eval()
-
-    smiles = []
-    log_lhs = []
-    original_smiles = []
-
-    for b_idx, batch in enumerate(test_loader):
-        device_batch = {
-            key: val.to(device) if type(val) == torch.Tensor else val for key, val in batch.items()
-        }
-        with torch.no_grad():
-            smiles_batch, log_lhs_batch = model.sample_molecules(device_batch, sampling_alg="beam")
-
-        smiles.extend(smiles_batch)
-        log_lhs.extend(log_lhs_batch)
-        original_smiles.extend(batch["target_smiles"])
-
-    return smiles, log_lhs, original_smiles
 
 
 def write_predictions(args, smiles, log_lhs, original_smiles):
@@ -77,9 +24,7 @@ def write_predictions(args, smiles, log_lhs, original_smiles):
             beam_outputs[beam_idx][b_idx] = smi
             beam_log_lhs[beam_idx][b_idx] = log_lhs
 
-    df_data = {
-        "original_smiles": original_smiles
-    }
+    df_data = {"original_smiles": original_smiles}
     for beam_idx, (outputs, log_lhs) in enumerate(zip(beam_outputs, beam_log_lhs)):
         df_data["prediction_" + str(beam_idx)] = beam_outputs[beam_idx]
         df_data["log_likelihood_" + str(beam_idx)] = beam_log_lhs[beam_idx]
@@ -88,53 +33,94 @@ def write_predictions(args, smiles, log_lhs, original_smiles):
     df.to_pickle(Path(args.products_path))
 
 
-def main(args):
+def load_bart_model(args):
     print("Building tokeniser...")
-    tokeniser = util.load_tokeniser(args.vocab_path, args.chem_token_start_idx)
+    tokeniser = ChemformerTokenizer(filename=args.vocabulary_path)
     print("Finished tokeniser.")
 
-    print("Reading dataset...")
-    dataset = build_dataset(args)
-    print("Finished dataset.")
-
     sampler = DecodeSampler(tokeniser, util.DEFAULT_MAX_SEQ_LEN)
-    pad_token_idx = tokeniser.vocab[tokeniser.pad_token]
 
     print("Loading model...")
     model = util.load_bart(args, sampler)
     model.num_beams = args.num_beams
-    sampler.max_seq_len = model.max_seq_len
+    sampler.max_seq_len = util.DEFAULT_MAX_SEQ_LEN
     print("Finished model.")
+    return model
 
+
+def build_datamodule(args, tokeniser):
+    dm = SimpleReactionListDataModule(
+        dataset_path=args.reactants_path,
+        tokenizer=tokeniser,
+        batch_size=args.batch_size,
+        max_seq_len=util.DEFAULT_MAX_SEQ_LEN,
+    )
+    return dm
+
+
+def build_data_loader(args, tokenizer):
     print("Building data loader...")
-    dm = build_datamodule(args, dataset, tokeniser, model.max_seq_len)
+    dm = build_datamodule(args, tokenizer)
     dm.setup()
-    test_loader = dm.test_dataloader()
+    data_loader = dm.full_dataloader()
     print("Finished loader.")
+    return data_loader
 
-    print("Evaluating model...")
-    smiles, log_lhs, original_smiles = predict(model, test_loader)
+
+def main(args):
+    model_args, data_args = util.get_chemformer_args(args)
+
+    kwargs = {
+        "vocabulary_path": args.vocabulary_path,
+        "n_gpus": args.n_gpus,
+        "model_path": args.model_path,
+        "model_args": model_args,
+        "data_args": data_args,
+        "n_beams": args.n_beams,
+        "train_mode": "eval",
+    }
+
+    chemformer = Chemformer(
+        **kwargs,
+        datamodule_type="simple_reaction_list", 
+    )
+
+    print("Making predictions...")
+    smiles, log_lhs, original_smiles = chemformer.predict(dataset=args.dataset_part)
     write_predictions(args, smiles, log_lhs, original_smiles)
-    print("Finished evaluation.")
-
-    print("Printing unknown tokens...")
-    tokeniser.print_unknown_tokens()
-    print("Complete.")
+    print("Finished predictions.")
+    return
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
 
     # Program level args
-    parser.add_argument("--reactants_path", type=str)
-    parser.add_argument("--model_path", type=str)
-    parser.add_argument("--products_path", type=str)
-    parser.add_argument("--vocab_path", type=str, default=util.DEFAULT_VOCAB_PATH)
-    parser.add_argument("--chem_token_start_idx", type=int, default=util.DEFAULT_CHEM_TOKEN_START)
+    parser.add_argument("--reactants_path")
+    parser.add_argument("--model_path")
+    parser.add_argument("--products_path")
+    parser.add_argument(
+        "--dataset_part",
+        help="Specifies which part of dataset to use.",
+        choices=["full", "train", "val", "test"],
+        default="full",
+    )
+    parser.add_argument("--vocabulary_path", default=util.DEFAULT_VOCAB_PATH)
+
+    parser.add_argument(
+        "--task",
+        choices=["forward_prediction", "backward_prediction", "mol_opt"],
+        default="forward_prediction",
+    )
 
     # Model args
+    parser.add_argument(
+        "--model_type", choices=["bart", "unified"], default=util.DEFAULT_MODEL
+    )
     parser.add_argument("--batch_size", type=int, default=DEFAULT_BATCH_SIZE)
-    parser.add_argument("--num_beams", type=int, default=DEFAULT_NUM_BEAMS)
+    parser.add_argument("--n_beams", type=int, default=DEFAULT_NUM_BEAMS)
+
+    parser.add_argument("--n_gpus", type=int, default=util.DEFAULT_GPUS)
 
     args = parser.parse_args()
     main(args)
