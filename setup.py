@@ -1,7 +1,3 @@
-from setuptools import setup
+from setuptools import setup, find_packages
 
-setup(
-    name="molbart",
-    version="0.1.0",
-    packages=["molbart", "molbart.models", "molbart.data"]
-)
+setup(name="molbart", packages=find_packages())
