@@ -58,7 +58,7 @@ See the ArgumentParser args in each file for more details on each argument.
 ### Notes on running retrosynthesis predictions and round-trip validation 
 Example of running inference and calulcating (1) top-N accuracy (stored in `metrics.csv`) and (2) round-trip accuracy(stored in `round_trip_metrics.csv`):
 1. `python -m molbart.inference_score --data_path data.csv -o metrics.csv -os sampled_smiles.json --dataset_type synthesis <additional_args>`
-1. `python -m molbart.modules.retrosynthesis.round_trip_inference --f data.csv -p sampled_smiles.json -o round_trip_metrics.csv -os round_trip_sampled_smiles.json <additional_args>`
+1. `python -m molbart.modules.retrosynthesis.round_trip_inference -f data.csv -p sampled_smiles.json -o round_trip_metrics.csv -os round_trip_sampled_smiles.json <additional_args>`
 
 When running analysis using the `--dataset_type synthesis` option (SynthesisDataModule), the input file given by `--data_path` is assumed to be a tab-separated .csv file containing the columns `products` (SMILES), `reactants` (SMILES) and `set` (labels of each sample according to which dataset split it belongs to, i.e. "train", "val" or "test").
 
