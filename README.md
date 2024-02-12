@@ -4,7 +4,12 @@ This repository contains the code used to generate the results in the Chemformer
 The Chemformer project aimed to pre-train a BART transformer language model [[3]](#3) on molecular SMILES strings [[4]](#4) by optimising a de-noising objective. We hypothesized that pre-training would lead to improved generalisation, performance, training speed and validity on downstream fine-tuned tasks. 
 The pre-trained model was tested on downstream tasks such as reaction prediction, retrosynthetic prediction, molecular optimisation and molecular property prediction in our original manuscript [[1]](#1). Our synthesis-prediction (seq2seq) Chemformer was evaluated for the purpose of single- and multi-step retrosynthesis [[2]](#2).
 
-The public models and datasets available [here](https://az.box.com/s/7eci3nd9vy0xplqniitpk02rbg9q2zcq).
+The public models and datasets available [here](https://az.box.com/s/7eci3nd9vy0xplqniitpk02rbg9q2zcq).  To run these models with the new version, you first need to update the checkpoint, e.g.:
+```
+model = torch.load("model.ckpt")
+model["hyper_parameters"]["vocabulary_size"] = model.pop("vocab_size")
+torch.save(model, "model_v2.ckpt")
+```
 
 
 ## Prerequisites
