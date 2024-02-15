@@ -7,7 +7,7 @@ The pre-trained model was tested on downstream tasks such as reaction prediction
 The public models and datasets available [here](https://az.box.com/s/7eci3nd9vy0xplqniitpk02rbg9q2zcq).  To run these models with the new version, you first need to update the checkpoint, e.g.:
 ```
 model = torch.load("model.ckpt")
-model["hyper_parameters"]["vocabulary_size"] = model.pop("vocab_size")
+model["hyper_parameters"]["vocabulary_size"] = model["hyper_parameters"].pop("vocab_size")
 torch.save(model, "model_v2.ckpt")
 ```
 
