@@ -151,9 +151,9 @@ If you find our work useful for your research, please cite our paper(s):
 Irwin, R., Dimitriadis, S., He, J., Bjerrum, E.J., 2021. Chemformer: A Pre-Trained Transformer for Computational Chemistry. Mach. Learn. Sci. Technol. [https://doi.org/10.1088/2632-2153/ac3ffb](https://doi.org/10.1088/2632-2153/ac3ffb)
 
 <a id="2">[2]</a>
-Westerlund, A.M., Manohar Koki, S., Kancharla, S., Tibo, A., Saigiridharan, L., Mercado, R., Genheden, S., 2023. 
-Do Chemformers dream of organic matter? Evaluating a transformer model for multi-step retrosynthesis, ChemRxiv
- [10.26434/chemrxiv-2023-685jv](10.26434/chemrxiv-2023-685jv)
+Westerlund, A.M., Manohar Koki, S., Kancharla, S., Tibo, A., Saigiridharan, L., Kabeshov, M., Mercado, R., Genheden, S., 2024. 
+Do Chemformers Dream of Organic Matter? Evaluating a Transformer Model for Multistep Retrosynthesis, J. Chem. Inf. Model.
+ [https://pubs.acs.org/doi/10.1021/acs.jcim.3c01685)
 
 
 ## References
