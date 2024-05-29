@@ -1,18 +1,15 @@
 from __future__ import annotations
 
-from operator import mod
-from os import truncate
-from tabnanny import verbose
 from typing import TYPE_CHECKING
 
 import numpy as np
-import pandas as pd
 import torch
 from pysmilesutils.tokenize import SMILESTokenizer
-from rdkit import Chem, DataStructs, RDLogger
-from rdkit.Chem import AllChem
+from rdkit import Chem, RDLogger
 
-from molbart.modules.search import EOS, LogicalOr, MaxLength, Node, beamsearch
+from molbart.utils.scores import ScoreCollection
+from molbart.utils.samplers.beam_search_utils import EOS, LogicalOr, MaxLength, Node, beamsearch
+from molbart.utils import smiles_utils
 
 if TYPE_CHECKING:
     from typing import Any, Dict, List, Tuple
@@ -31,6 +28,7 @@ class BeamSearchSampler:
     def __init__(
         self,
         tokenizer: SMILESTokenizer,
+        scorers: ScoreCollection,
         max_sequence_length: int,
         device: str = "cuda",
         data_device: str = "cuda",
@@ -48,198 +46,43 @@ class BeamSearchSampler:
         self.tokenizer = tokenizer
         self.max_sequence_length = max_sequence_length
         self.device = device
-        self.fraction_invalid = None
-        self.fraction_unique = None
-        self.molecules_unique = None
         self.smiles_unique = None
         self.log_lhs_unique = None
         self.sampling_alg = None
-        self.beam_size = None
-        self.n_unique_beams = 1
         self.data_device = data_device
         self.sample_unique = sample_unique
+        self.scorers = scorers
         return
 
-    @staticmethod
-    def _canonicalize_smiles(input_smiles: str) -> str:
-        """
-        Canonicalize smiles and sort the (possible) multiple molcules.
-
-        Args:
-            input_smiles (str): SMILES string.
-        Returns:
-            str: Canonicalized SMILES string.
-        """
-        mol = Chem.MolFromSmiles(input_smiles)
-        if mol is None:
-            return input_smiles
-        smiles_canonical = Chem.MolToSmiles(mol)
-
-        smiles_sep = np.array(smiles_canonical.split("."))
-        smiles_canonical = ".".join(np.sort(smiles_sep))
-        return smiles_canonical
-
-    def _postprocess_sampling(
-        self, batch_smiles: np.ndarray, batch_log_lhs: np.ndarray, n_unique_beams: int
-    ) -> Tuple[List[np.ndarray], List[np.ndarray], List[np.ndarray], float]:
-        """
-        For beam_size > 1: Uniqueifying sampled molecules and select
-        'n_unique_beams'-top molecules.
-
-        Args:
-            batch_smiles (np.ndarray): sampled top-N SMILES from the input batch smiles.
-            batch_log_lhs (np.ndarray): log-likelihoods of sampled SMILES.
-            n_unique_beams (int): upper limit on number of unique SMILES to return.
-
-        Returns:
-            Tuple[np.ndarray, np.ndarray, np.ndarray, float]: Uniqueified SMILES,
-                corresponding rdkit molecules, log-likelihoods and fraction of
-                unique SMILES.
-        """
-
-        n_samples = len(batch_smiles)
-        n_beams = len(batch_smiles[0])
-
-        self.n_unique_beams = n_unique_beams
-
-        batch_mols_unique = [""] * n_samples
-        batch_smiles_unique = [""] * n_samples
-        batch_log_lhs_unique = [0] * n_samples
-        inds = np.arange(n_samples)
-
-        n_unique_total = 0
-        for i, sampled_smiles, log_lhs in zip(inds, batch_smiles, batch_log_lhs):
-            # Canonicalize sampled SMILES
-            smiles_canonical = [
-                self._canonicalize_smiles(smi) for smi in sampled_smiles
-            ]
-            sampled_mols = [Chem.MolFromSmiles(smi) for smi in smiles_canonical]
-
-            smiles_canonical = np.array(
-                [
-                    smi
-                    for smi, mol in zip(smiles_canonical, sampled_mols)
-                    if mol is not None
-                ]
-            )
-
-            log_lhs_valid = np.array(
-                [llh for llh, mol in zip(log_lhs, sampled_mols) if mol is not None]
-            )
-            sampled_mols = np.array([mol for mol in sampled_mols if mol is not None])
-
-            # Uniquely sampled SMILES
-            smiles_unique = np.unique(smiles_canonical)
-            n_unique = len(smiles_unique)
-            n_unique_total += n_unique
-            log_lhs_unique = np.zeros(n_unique)
-            mols_unique = np.zeros(n_unique, dtype=Chem.rdchem.Mol)
-
-            for i_mol, smi in enumerate(smiles_unique):
-                log_lhs_unique[i_mol] = np.max(log_lhs_valid[smi == smiles_canonical])
-                mols_unique[i_mol] = sampled_mols[smi == smiles_canonical][0]
-
-            # Get top-K unique beams
-            sort_inds = np.argsort(log_lhs_unique)[::-1]
-            smiles_unique = smiles_unique[sort_inds[0:n_unique_beams]]
-            mols_unique = mols_unique[sort_inds[0:n_unique_beams]]
-            log_lhs_unique = log_lhs_unique[sort_inds[0:n_unique_beams]]
-
-            batch_smiles_unique[i] = smiles_unique
-            batch_mols_unique[i] = mols_unique
-            batch_log_lhs_unique[i] = log_lhs_unique
-
-        frac_unique = n_unique_total / (n_beams * n_samples)
-        return batch_smiles_unique, batch_mols_unique, batch_log_lhs_unique, frac_unique
-
-    @staticmethod
-    def _compute_accuracy(
-        sampled_smiles: List[List[str]], target_smiles: List[str], top_Ks: np.ndarray
-    ) -> Tuple[np.ndarray, np.ndarray]:
-        """
-        Computing top-K accuracy for each K in 'top_Ks'.
-        """
-
-        n_beams = np.max(
-            np.array(
-                [1, np.max(np.asarray([len(smiles) for smiles in sampled_smiles]))]
-            )
-        )
-        top_Ks = top_Ks[top_Ks <= n_beams]
-        n_Ks = len(top_Ks)
-
-        accuracy = np.zeros(n_Ks)
-
-        is_in_set = np.zeros((len(sampled_smiles), n_Ks), dtype=bool)
-        for i_k, K in enumerate(top_Ks):
-            for i_sample, mols in enumerate(sampled_smiles):
-                top_K_mols = mols[0:K]
-
-                if len(top_K_mols) == 0:
-                    continue
-                is_in_set[i_sample, i_k] = target_smiles[i_sample] in top_K_mols
-
-        is_in_set = np.cumsum(is_in_set, axis=1)
-        accuracy = np.mean(is_in_set > 0, axis=0)
-        return accuracy, top_Ks
-
-    @staticmethod
-    def _compute_similarity(
-        sampled_mols: List[List[Chem.rdchem.Mol]], target_mols: List[Chem.rdchem.Mol]
-    ) -> np.ndarray:
-        """
-        Compute similarities of ECPF4 fingerprints of target and top-1 sampled molecules.
-        """
-        n_samples = len(target_mols)
-
-        similarity = np.nan * np.ones(n_samples)
-        for idx, sampled, target in zip(range(n_samples), sampled_mols, target_mols):
-            if len(sampled) > 0:
-                if sampled[0] is None or target is None:
-                    continue
-                fp1 = AllChem.GetMorganFingerprint(sampled[0], 2)
-                fp2 = AllChem.GetMorganFingerprint(target, 2)
-                similarity[idx] = DataStructs.TanimotoSimilarity(
-                    fp1, fp2
-                )  # Tanimoto similarity = Jaccard similarity
-        return similarity
-
-    def _evaluate_sampled_molecules(
+    def compute_sampling_metrics(
         self,
-        sampled_smiles: List[List[str]],
+        sampled_smiles: List[np.ndarray],
         target_smiles: List[str],
-        top_Ks: np.ndarray = np.array([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 20, 50]),
         is_canonical: bool = False,
-        compute_similarity: bool = False,
-    ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    ) -> Dict[str, Any]:
         """
-        Compute top-1 to top-50 accuracy of (unique set of) sampled smiles.
+        Uses a ScoreCollection to evaluated a list of sampled_smiles given target_smiles.
+        Compute sampling metrics given sampled SMILES and target SMILES.
+        Computes the scores loaded in self.scorers (ScoreCollection).
+
+        Args:
+            sampled_smiles: list of top-k sampled SMILES
+            target_smiles: list of target SMILES
+            is_canonical: If True, will skip canonicalization
         """
-        # Canonicalizing target SMILES
-        target_smiles_canonical = [
-            self._canonicalize_smiles(smi) for smi in target_smiles
-        ]
-        target_mols = [Chem.MolFromSmiles(smi) for smi in target_smiles_canonical]
+        n_samples = len(sampled_smiles)
+        n_targets = len(target_smiles)
+        err_msg = f"The number of sampled and target molecules must be the same, got {n_samples} and {n_targets}"
+        assert n_samples == n_targets, err_msg
 
-        # Canonicalizing sampled SMILES
-        if not is_canonical:
-            sampled_smiles = [
-                [self._canonicalize_smiles(smi) for smi in smiles_list]
-                for smiles_list in sampled_smiles
-            ]
-        sampled_molecules = [
-            [Chem.MolFromSmiles(smi) for smi in smiles_list]
-            for smiles_list in sampled_smiles
-        ]
+        if is_canonical:
+            for scorer in self.scorers.objects():
+                if not getattr(scorer, "canonicalized", True):
+                    setattr(scorer, "canonicalized", True)
+                    print("Configuring scorers for pre-canonicalized SMILES.")
 
-        accuracy, top_Ks = self._compute_accuracy(
-            sampled_smiles, target_smiles_canonical, top_Ks
-        )
-
-        similarity = None
-        if compute_similarity:
-            similarity = self._compute_similarity(sampled_molecules, target_mols)
-        return accuracy, top_Ks, similarity
+        metrics = self.scorers.score(sampled_smiles, target_smiles)
+        return metrics
 
     @torch.no_grad()
     def sample_molecules(
@@ -259,15 +102,15 @@ class BeamSearchSampler:
             batch_input (Dict): The input, X, to the network
             beam_size (int): Number of beams in beam search
             sampling_alg (str): Algorithm to use for sampling from the model ("greedy"
-                or "beam")
+                or "beam"). Raises ValueError otherwise.
+            return_tokenized: whether to return the sampled tokens (True), or the
+                converted SMILES (False). Defaults to False.
 
         Returns:
-            (np.ndarray, np.ndarray): (SMILES of sampled molecules, log-likelihoods) or
-            (token indices of sampled molecules, log-likelihoods)
+            (SMILES of sampled molecules and log-likelihoods) or
+            (token indices of sampled molecules and log-likelihoods)
         """
         self.sampling_alg = sampling_alg
-        self.molecules_unique = None
-        self.beam_size = beam_size
 
         if self.device is None:
             self.device = next(model.parameters()).device
@@ -295,69 +138,26 @@ class BeamSearchSampler:
         Y = node.y.detach().cpu().numpy()
         tokens = self.tokenizer.convert_ids_to_tokens(Y)
 
-        sampled_smiles = np.asarray(
-            self.tokenizer.detokenize(tokens, truncate_at_end_token=True)
-        ).reshape((-1, beam_size))
+        sampled_smiles = np.asarray(self.tokenizer.detokenize(tokens, truncate_at_end_token=True)).reshape(
+            (-1, beam_size)
+        )
 
         log_lhs = (node.loglikelihood.detach().cpu().numpy()).reshape(-1, beam_size)
 
-        if beam_size > 1 and self.sample_unique:
-            (
-                self.smiles_unique,
-                self.molecules_unique,
-                self.log_lhs_unique,
-                self.fraction_unique,
-            ) = self._postprocess_sampling(
-                sampled_smiles, log_lhs, model.n_unique_beams
-            )
-
-        # Computing fraction of invalid top-1 SMILES
-        sampled_mols = [Chem.MolFromSmiles(smi[0]) for smi in sampled_smiles]
-        is_invalid = [1 for mol in sampled_mols if mol is None]
-        self.fraction_invalid = len(is_invalid) / len(sampled_smiles)
+        if self.sample_unique:
+            if beam_size == 1:
+                self.smiles_unique = sampled_smiles
+                self.log_lhs_unique = log_lhs
+            else:
+                (
+                    self.smiles_unique,
+                    self.log_lhs_unique,
+                ) = smiles_utils.uniqueify_sampled_smiles(sampled_smiles, log_lhs, model.n_unique_beams)
 
         if return_tokenized:
             return Y, log_lhs
         else:
             return sampled_smiles, log_lhs
-
-    def compute_sampling_metrics(
-        self,
-        sampled_smiles,
-        target_smiles,
-        is_canonical=False,
-        compute_similarity=False,
-    ):
-        """
-        Compute sampling metrics:
-        1. Molecular accuracy (fraction of sampled set of molecules that include
-        the target molecule (top-K)).
-        2. Similarity of each sampled top-1 molecule and target molecule.
-        """
-        n_samples = len(sampled_smiles)
-        n_targets = len(target_smiles)
-        err_msg = f"The number of sampled and target molecules must be the same, got {n_samples} and {n_targets}"
-        assert n_samples == n_targets, err_msg
-
-        if self.sampling_alg == "greedy":
-            top_Ks = np.array([1])
-        else:
-            top_Ks = np.array([1, 3, 5, 10, 20, 50])
-
-        accuracy, top_Ks, similarity = self._evaluate_sampled_molecules(
-            sampled_smiles, target_smiles, top_Ks, is_canonical, compute_similarity
-        )
-
-        metrics = {
-            "accuracy": accuracy[0],  # top-1 accuracy
-            "fraction_invalid": self.fraction_invalid,
-            "similarity": [similarity],
-            "fraction_unique": self.fraction_unique,
-        }
-
-        for i, k in enumerate(top_Ks):
-            metrics.update({"accuracy_top_" + str(k): accuracy[i]})
-        return metrics
 
 
 class DecodeSampler:
@@ -374,9 +174,7 @@ class DecodeSampler:
 
         self.bad_token_ll = -1e5
 
-    def decode(
-        self, decode_fn, batch_size, sampling_alg="greedy", device="cpu", **kwargs
-    ):
+    def decode(self, decode_fn, batch_size, sampling_alg="greedy", device="cpu", **kwargs):
         """Sample a molecule from a model by calling the decode function argument
 
         Args:
@@ -394,7 +192,7 @@ class DecodeSampler:
             output = self.greedy_decode(decode_fn, batch_size, device)
 
         elif sampling_alg == "beam":
-            output = self.beam_decode(decode_fn, batch_size, device, kwargs)
+            output = self.beam_decode(decode_fn, batch_size, device, **kwargs)
 
         else:
             raise ValueError(f"Unknown sampling algorithm {sampling_alg}")
@@ -414,14 +212,10 @@ class DecodeSampler:
         """
 
         # Create tensors which will be reused
-        token_ids = [self.begin_token_id] + (
-            [self.pad_token_id] * (self.max_seq_len - 1)
-        )
+        token_ids = [self.begin_token_id] + ([self.pad_token_id] * (self.max_seq_len - 1))
         token_ids = [token_ids] * batch_size
         token_ids = torch.tensor(token_ids, device=device).transpose(0, 1)
-        pad_mask = torch.zeros(
-            (self.max_seq_len, batch_size), device=device, dtype=torch.bool
-        )
+        pad_mask = torch.zeros((self.max_seq_len, batch_size), device=device, dtype=torch.bool)
         log_lhs = torch.zeros((batch_size))
 
         # Iteratively apply the tokens to the model and build up the sequence
@@ -480,14 +274,10 @@ class DecodeSampler:
         """
 
         # Create tensors which will be reused
-        token_ids = [self.begin_token_id] + (
-            [self.pad_token_id] * (self.max_seq_len - 1)
-        )
+        token_ids = [self.begin_token_id] + ([self.pad_token_id] * (self.max_seq_len - 1))
         token_ids = [token_ids] * batch_size
         token_ids = torch.tensor(token_ids, device=device).transpose(0, 1)
-        pad_mask = torch.zeros(
-            (self.max_seq_len, batch_size), device=device, dtype=torch.bool
-        )
+        pad_mask = torch.zeros((self.max_seq_len, batch_size), device=device, dtype=torch.bool)
 
         ts = token_ids[:1, :]
         ms = pad_mask[:1, :]
@@ -508,21 +298,14 @@ class DecodeSampler:
             pad_mask_list[beam_idx][1, :] = 0
 
         for i in range(2, self.max_seq_len):
-            complete = self._update_beams_(
-                i, decode_fn, token_ids_list, pad_mask_list, lls_list
-            )
+            complete = self._update_beams_(i, decode_fn, token_ids_list, pad_mask_list, lls_list)
             if complete:
                 break
 
         tokens_list = [token_ids.transpose(0, 1) for token_ids in token_ids_list]
-        tokens_list = [
-            self.tokenizer.convert_ids_to_tokens(tokens) for tokens in tokens_list
-        ]
+        tokens_list = [self.tokenizer.convert_ids_to_tokens(tokens) for tokens in tokens_list]
 
-        mol_strs_list = [
-            self.tokenizer.detokenize(tokens, truncate_at_end_token=True)
-            for tokens in tokens_list
-        ]
+        mol_strs_list = [self.tokenizer.detokenize(tokens, truncate_at_end_token=True) for tokens in tokens_list]
         log_lhs_list = [log_lhs.tolist() for log_lhs in lls_list]
 
         # Transpose and sort list of molecules based on ll
@@ -559,9 +342,7 @@ class DecodeSampler:
 
         # Apply current seqs to model to get a distribution over next tokens
         # new_lls is a tensor of shape [batch_size, vocab_size * num_beams]
-        new_lls = [
-            self._beam_step(decode_fn, t, m, lls) for t, m, lls in zip(ts, ms, lls_list)
-        ]
+        new_lls = [self._beam_step(decode_fn, t, m, lls) for t, m, lls in zip(ts, ms, lls_list)]
         norm_lls = [self._norm_length(lls, mask) for lls, mask in zip(new_lls, ms)]
 
         _, vocab_size = tuple(norm_lls[0].shape)
@@ -581,14 +362,9 @@ class DecodeSampler:
         new_lls_list = []
 
         # Set the sampled tokens, pad masks and log likelihoods for each of the new beams
-        for new_beam_idx, (new_ids, beam_idxs, lls) in enumerate(
-            zip(new_ids_list, beam_idxs_list, top_lls)
-        ):
+        for new_beam_idx, (new_ids, beam_idxs, lls) in enumerate(zip(new_ids_list, beam_idxs_list, top_lls)):
             # Get the previous sequences corresponding to the new beams
-            token_ids = [
-                token_ids_list[beam_idx][:, b_idx]
-                for b_idx, beam_idx in enumerate(beam_idxs)
-            ]
+            token_ids = [token_ids_list[beam_idx][:, b_idx] for b_idx, beam_idx in enumerate(beam_idxs)]
             token_ids = torch.stack(token_ids).transpose(0, 1)
 
             # Generate next elements in the pad mask. An element is padded if:
@@ -608,10 +384,7 @@ class DecodeSampler:
             token_ids[i, :] = new_ids
 
             # Generate full pad mask sequence for new token sequence
-            pad_mask = [
-                pad_mask_list[beam_idx][:, b_idx]
-                for b_idx, beam_idx in enumerate(beam_idxs)
-            ]
+            pad_mask = [pad_mask_list[beam_idx][:, b_idx] for b_idx, beam_idx in enumerate(beam_idxs)]
             pad_mask = torch.stack(pad_mask).transpose(0, 1)
             pad_mask[i, :] = new_pad_mask
 
@@ -624,9 +397,7 @@ class DecodeSampler:
 
         # Update all tokens, pad masks and lls
         if not complete:
-            for beam_idx, (ts, pm, lls) in enumerate(
-                zip(new_ts_list, new_pm_list, new_lls_list)
-            ):
+            for beam_idx, (ts, pm, lls) in enumerate(zip(new_ts_list, new_pm_list, new_lls_list)):
                 token_ids_list[beam_idx] = ts
                 pad_mask_list[beam_idx] = pm
                 lls_list[beam_idx] = lls
@@ -683,9 +454,7 @@ class DecodeSampler:
 
         if self.length_norm is not None:
             seq_lengths = (~mask).sum(dim=0)
-            norm = torch.pow(5 + seq_lengths, self.length_norm) / pow(
-                6, self.length_norm
-            )
+            norm = torch.pow(5 + seq_lengths, self.length_norm) / pow(6, self.length_norm)
             norm_lls = (seq_lls.T / norm.cpu()).T
             return norm_lls
 
@@ -776,9 +545,7 @@ class DecodeSampler:
         elif data_type == list:
             results = DecodeSampler._calc_beam_metrics(sampled_smiles, canon_targets)
         else:
-            raise TypeError(
-                f"Elements of sampled_smiles must be either a str or a list, got {data_type}"
-            )
+            raise TypeError(f"Elements of sampled_smiles must be either a str or a list, got {data_type}")
 
         return results
 
@@ -787,12 +554,8 @@ class DecodeSampler:
         sampled_mols = [Chem.MolFromSmiles(smi) for smi in sampled_smiles]
         invalid = [mol is None for mol in sampled_mols]
 
-        canon_smiles = [
-            "Unknown" if mol is None else Chem.MolToSmiles(mol) for mol in sampled_mols
-        ]
-        correct_smiles = [
-            target_smiles[idx] == smi for idx, smi in enumerate(canon_smiles)
-        ]
+        canon_smiles = ["Unknown" if mol is None else Chem.MolToSmiles(mol) for mol in sampled_mols]
+        correct_smiles = [target_smiles[idx] == smi for idx, smi in enumerate(canon_smiles)]
 
         num_correct = sum(correct_smiles)
         total = len(correct_smiles)
@@ -824,13 +587,8 @@ class DecodeSampler:
             for batch_idx, mols in enumerate(sampled_smiles):
                 samples = mols[:num_samples]
                 samples_mols = [Chem.MolFromSmiles(smi) for smi in samples]
-                samples_smiles = [
-                    "Unknown" if mol is None else Chem.MolToSmiles(mol)
-                    for mol in samples_mols
-                ]
-                correct_smiles = [
-                    smi == target_smiles[batch_idx] for smi in samples_smiles
-                ]
+                samples_smiles = ["Unknown" if mol is None else Chem.MolToSmiles(mol) for mol in samples_mols]
+                correct_smiles = [smi == target_smiles[batch_idx] for smi in samples_smiles]
                 is_correct = sum(correct_smiles) >= 1
                 top_k_correct.append(is_correct)
 

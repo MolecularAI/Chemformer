@@ -65,9 +65,7 @@ class ChemformerTokenizer(SMILESTokenizer):
     def chem_token_idxs(self) -> List[int]:
         """Returns the indices of the vocabulary that are chemical tokens"""
         if self._chem_token_idxs is None:
-            self._chem_token_idxs = list(
-                range(self._chem_start_idx, len(self.vocabulary))
-            )
+            self._chem_token_idxs = list(range(self._chem_start_idx, len(self.vocabulary)))
         return self._chem_token_idxs
 
     @property
@@ -148,14 +146,10 @@ class TokensMasker:
         self._tokenizer = tokenizer
         self._mask_prob = mask_prob
 
-    def __call__(
-        self, tokens: ListOfStrList, empty_mask=False
-    ) -> Tuple[ListOfStrList, ListOfBoolList]:
+    def __call__(self, tokens: ListOfStrList, empty_mask=False) -> Tuple[ListOfStrList, ListOfBoolList]:
         return self.mask_tokens(tokens, empty_mask)
 
-    def mask_tokens(
-        self, tokens: ListOfStrList, empty_mask=False
-    ) -> Tuple[ListOfStrList, ListOfBoolList]:
+    def mask_tokens(self, tokens: ListOfStrList, empty_mask=False) -> Tuple[ListOfStrList, ListOfBoolList]:
         """
         Mask tokenized string.
 
@@ -183,9 +177,7 @@ class TokensMasker:
         return masked_tokens, token_masks
 
     def _apply_mask(self, tokens: StrList) -> Tuple[StrList, BoolList]:
-        raise NotImplementedError(
-            "You need to use one of the sub-classes to mask tokens"
-        )
+        raise NotImplementedError("You need to use one of the sub-classes to mask tokens")
 
 
 class ReplaceTokensMasker(TokensMasker):
@@ -213,10 +205,7 @@ class ReplaceTokensMasker(TokensMasker):
         mask_bools = [True, False]
         weights = [self._mask_prob, 1 - self._mask_prob]
         token_mask = random.choices(mask_bools, weights=weights, k=len(tokens))
-        masked = [
-            self._mask_token(tokens[idx]) if mask else tokens[idx]
-            for idx, mask in enumerate(token_mask)
-        ]
+        masked = [self._mask_token(tokens[idx]) if mask else tokens[idx] for idx, mask in enumerate(token_mask)]
         return masked, token_mask
 
     def _mask_token(self, token: str) -> str:

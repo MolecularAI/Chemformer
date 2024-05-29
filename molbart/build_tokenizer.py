@@ -1,10 +1,10 @@
-import argparse
 from pathlib import Path
 
+import hydra
 import pandas as pd
 
-from molbart.modules.tokenizer import ChemformerTokenizer
-from molbart.modules.util import REGEX
+from molbart.utils.tokenizer import ChemformerTokenizer
+from molbart.utils.data_utils import REGEX
 
 
 def read_extra_tokens(paths):
@@ -30,6 +30,7 @@ def build_unused_tokens(num_tokens):
     return tokens
 
 
+@hydra.main(version_base=None, config_path="config", config_name="build_tokeniser")
 def main(args):
     print("Reading molecule dataset...")
     mol_dataset = pd.read_pickle(args.data_path)
@@ -56,14 +57,4 @@ def main(args):
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser("Script for training the tokenizer on a dataset.")
-
-    parser.add_argument("--data_path")
-    parser.add_argument("--smiles_column", default="canonical_smiles")
-    parser.add_argument("--mol_opt_tokens_path", default="mol_opt_tokens.txt")
-    parser.add_argument("--prop_pred_tokens_path", default="prop_pred_tokens.txt")
-    parser.add_argument("--num_unused_tokens", type=int, default=200)
-    parser.add_argument("--tokeniser_path")
-
-    args = parser.parse_args()
-    main(args)
+    main()

@@ -6,10 +6,10 @@ import pandas as pd
 import torch
 from rdkit import Chem
 
-from molbart.modules.data.base import SimpleMolListDataModule
+from molbart.data.base import MoleculeListDataModule
 
 
-class ChemblDataModule(SimpleMolListDataModule):
+class ChemblDataModule(MoleculeListDataModule):
     """
     DataModule for Chembl dataset.
 
@@ -28,13 +28,11 @@ class ChemblDataModule(SimpleMolListDataModule):
     def _transform_batch(
         self, batch: List[Dict[str, Any]], train: bool
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, List[str]]:
-        smiles_batch = [
-            {"smiles": Chem.MolToSmiles(item["molecules"])} for item in batch
-        ]
+        smiles_batch = [{"smiles": Chem.MolToSmiles(item["molecules"])} for item in batch]
         return super()._transform_batch(smiles_batch, train)
 
 
-class ZincDataModule(SimpleMolListDataModule):
+class ZincDataModule(MoleculeListDataModule):
     """
     DataModule for Zinc dataset.
 

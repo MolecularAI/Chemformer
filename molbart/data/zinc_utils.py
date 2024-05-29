@@ -56,9 +56,7 @@ def read_df_slice(idxs, idx_file_mapping):
 
 def read_zinc_slice(data_path, rank, num_gpus, batch_size):
     num_mols, idx_file_mapping = number_of_mols(data_path)
-    rank_idxs = [
-        idxs.tolist() for idxs in np.array_split(list(range(num_mols)), num_gpus)
-    ]
+    rank_idxs = [idxs.tolist() for idxs in np.array_split(list(range(num_mols)), num_gpus)]
 
     # Drop last mols to ensure all processes have the same number of batches
     num_mols = min([len(idxs) for idxs in rank_idxs])

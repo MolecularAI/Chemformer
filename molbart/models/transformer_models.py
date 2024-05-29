@@ -69,9 +69,7 @@ class BARTModel(_AbsTransformerModel):
             norm=nn.LayerNorm(d_model),
         )
 
-        self.loss_function = nn.CrossEntropyLoss(
-            reduction="none", ignore_index=pad_token_idx
-        )
+        self.loss_function = nn.CrossEntropyLoss(reduction="none", ignore_index=pad_token_idx)
 
         self.token_fc = nn.Linear(d_model, vocabulary_size)
         self.log_softmax = nn.LogSoftmax(dim=2)
@@ -106,9 +104,7 @@ class BARTModel(_AbsTransformerModel):
         decoder_embeddings = self._construct_input(decoder_input)
 
         seq_len, _, _ = tuple(decoder_embeddings.size())
-        tgt_mask = self._generate_square_subsequent_mask(
-            seq_len, device=encoder_embs.device
-        )
+        tgt_mask = self._generate_square_subsequent_mask(seq_len, device=encoder_embs.device)
 
         memory = self.encoder(encoder_embs, src_key_padding_mask=encoder_pad_mask)
         model_output = self.decoder(
@@ -164,9 +160,7 @@ class BARTModel(_AbsTransformerModel):
         decoder_embeddings = self._construct_input(decoder_input)
 
         sequence_length, _, _ = tuple(decoder_embeddings.size())
-        tgt_mask = self._generate_square_subsequent_mask(
-            sequence_length, device=decoder_embeddings.device
-        )
+        tgt_mask = self._generate_square_subsequent_mask(sequence_length, device=decoder_embeddings.device)
 
         decoder_output = self.decoder(
             decoder_embeddings,
@@ -216,9 +210,7 @@ class BARTModel(_AbsTransformerModel):
         seq_len, batch_size = tuple(target.size())
 
         token_pred = token_output.reshape((seq_len * batch_size, -1)).float()
-        loss = self.loss_function(token_pred, target.reshape(-1)).reshape(
-            (seq_len, batch_size)
-        )
+        loss = self.loss_function(token_pred, target.reshape(-1)).reshape((seq_len, batch_size))
 
         inv_target_mask = ~(target_mask > 0)
         num_tokens = inv_target_mask.sum()
@@ -226,9 +218,7 @@ class BARTModel(_AbsTransformerModel):
 
         return loss
 
-    def sample_molecules(
-        self, batch_input, sampling_alg="greedy", return_tokenized=False
-    ):
+    def sample_molecules(self, batch_input, sampling_alg="greedy", return_tokenized=False):
         """Sample molecules from the model
 
         Args:
@@ -262,14 +252,10 @@ class BARTModel(_AbsTransformerModel):
             decode_fn = partial(self._decode_fn, memory=memory, mem_pad_mask=mem_mask)
 
             if sampling_alg == "greedy":
-                mol_strs, log_lhs = self.sampler.greedy_decode(
-                    decode_fn, batch_size, memory.device
-                )
+                mol_strs, log_lhs = self.sampler.greedy_decode(decode_fn, batch_size, memory.device)
 
             elif sampling_alg == "beam":
-                mol_strs, log_lhs = self.sampler.beam_decode(
-                    decode_fn, batch_size, memory.device, k=self.num_beams
-                )
+                mol_strs, log_lhs = self.sampler.beam_decode(decode_fn, batch_size, memory.device, k=self.num_beams)
 
             else:
                 raise ValueError(f"Unknown sampling algorithm {sampling_alg}")
@@ -307,9 +293,9 @@ class BARTModel(_AbsTransformerModel):
         decoder_embeddings = self._construct_input(decoder_input)
 
         seq_len, _, _ = tuple(decoder_embeddings.size())
-        tgt_mask = self._generate_square_subsequent_mask(
-            seq_len, device=decoder_embeddings.device
-        ).to(decoder_embeddings.device)
+        tgt_mask = self._generate_square_subsequent_mask(seq_len, device=decoder_embeddings.device).to(
+            decoder_embeddings.device
+        )
 
         decoder_output = self.decoder(
             decoder_embeddings,
@@ -368,15 +354,11 @@ class UnifiedModel(_AbsTransformerModel):
         self.test_sampling_alg = "beam"
 
         enc_norm = nn.LayerNorm(d_model)
-        enc_layer = PreNormEncoderLayer(
-            d_model, num_heads, d_feedforward, dropout, activation
-        )
+        enc_layer = PreNormEncoderLayer(d_model, num_heads, d_feedforward, dropout, activation)
         self.encoder = nn.TransformerEncoder(enc_layer, num_layers, norm=enc_norm)
 
         self.token_fc = nn.Linear(d_model, vocabulary_size)
-        self.loss_function = nn.CrossEntropyLoss(
-            reduction="none", ignore_index=pad_token_idx
-        )
+        self.loss_function = nn.CrossEntropyLoss(reduction="none", ignore_index=pad_token_idx)
         self.log_softmax = nn.LogSoftmax(dim=2)
 
         self._init_params()
@@ -455,9 +437,7 @@ class UnifiedModel(_AbsTransformerModel):
         assert batch_size == tgt_batch_size
 
         token_pred = token_output.reshape((seq_len * batch_size, -1)).float()
-        loss = self.loss_function(token_pred, target.reshape(-1)).reshape(
-            (seq_len, batch_size)
-        )
+        loss = self.loss_function(token_pred, target.reshape(-1)).reshape((seq_len, batch_size))
 
         inv_target_mask = ~target_mask
         num_tokens = inv_target_mask.sum()
@@ -487,19 +467,13 @@ class UnifiedModel(_AbsTransformerModel):
         enc_seq_len, batch_size = tuple(enc_token_ids.size())
         self.sampler.max_seq_len = self.max_seq_len - enc_seq_len
 
-        decode_fn = partial(
-            self._decode_fn, enc_token_ids=enc_token_ids, enc_pad_mask=enc_pad_mask
-        )
+        decode_fn = partial(self._decode_fn, enc_token_ids=enc_token_ids, enc_pad_mask=enc_pad_mask)
 
         if sampling_alg == "greedy":
-            mol_strs, log_lhs = self.sampler.greedy_decode(
-                decode_fn, batch_size, enc_token_ids.device
-            )
+            mol_strs, log_lhs = self.sampler.greedy_decode(decode_fn, batch_size, enc_token_ids.device)
 
         elif sampling_alg == "beam":
-            mol_strs, log_lhs = self.sampler.beam_decode(
-                decode_fn, batch_size, enc_token_ids.device, k=self.num_beams
-            )
+            mol_strs, log_lhs = self.sampler.beam_decode(decode_fn, batch_size, enc_token_ids.device, k=self.num_beams)
 
         else:
             raise ValueError(f"Unknown sampling algorithm {sampling_alg}")
@@ -515,9 +489,7 @@ class UnifiedModel(_AbsTransformerModel):
 
         enc_length, _ = tuple(enc_token_ids.shape)
         dec_length, _ = tuple(dec_token_ids.shape)
-        att_mask = self._build_att_mask(
-            enc_length - 1, dec_length + 1, device=dec_token_ids.device
-        )
+        att_mask = self._build_att_mask(enc_length - 1, dec_length + 1, device=dec_token_ids.device)
 
         model_input = {
             "encoder_input": enc_token_ids,

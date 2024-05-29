@@ -1,16 +1,15 @@
 from typing import Any, Dict, List, Tuple, Union
 
 import numpy as np
-import pandas as pd
 
-from molbart.models.chemformer import Chemformer
+from molbart.models import Chemformer
 
 
 def compute_round_trip_accuracy(
     chemformer: Chemformer,
     sampled_smiles: List[np.ndarray],
     target_smiles: List[List[str]],
-) -> pd.DataFrame:
+) -> List[Dict[str, Any]]:
     """
     Calculating (round-trip) accuracy given sampled and target SMILES (products).
 
@@ -20,25 +19,24 @@ def compute_round_trip_accuracy(
         target_smiles: ground truth product SMILES
     """
     print("Evaluating predictions.")
+
     metrics_out = []
+    batch_idx = 0
     for sampled_batch, target_batch in zip(sampled_smiles, target_smiles):
-        metrics = pd.DataFrame.from_dict(
-            chemformer.model.sampler.compute_sampling_metrics(
-                sampled_batch,
-                target_batch,
-                is_canonical=False,
-                compute_similarity=False,
-            )
+        metrics = chemformer.model.sampler.compute_sampling_metrics(
+            sampled_batch,
+            target_batch,
+            is_canonical=False,
         )
-        metrics = metrics.drop(columns=["accuracy", "fraction_unique"])
+
+        metrics.update({"sampled_molecules": sampled_batch, "target_smiles": target_batch})
+
         metrics_out.append(metrics)
-    metrics_out = pd.concat(metrics_out, axis=0)
+        batch_idx += 1
     return metrics_out
 
 
-def batchify(
-    smiles_lst: Union[List[str], np.ndarray], batch_size: int
-) -> Union[List[List[str]], List[np.ndarray]]:
+def batchify(smiles_lst: Union[List[str], np.ndarray], batch_size: int) -> Union[List[List[str]], List[np.ndarray]]:
     """
     Create batches given an input list of SMILES or list of list of SMILES.
 
@@ -54,9 +52,7 @@ def batchify(
     batched_smiles = []
     for i_batch in range(n_batches):
         if i_batch != n_batches - 1:
-            batched_smiles.append(
-                smiles_lst[i_batch * batch_size : (i_batch + 1) * batch_size]
-            )
+            batched_smiles.append(smiles_lst[i_batch * batch_size : (i_batch + 1) * batch_size])
         else:
             batched_smiles.append(smiles_lst[i_batch * batch_size : :])
     return batched_smiles
@@ -66,6 +62,7 @@ def convert_to_input_format(
     sampled_smiles: List[List[str]],
     target_smiles: List[List[str]],
     sampled_data_params: Dict[str, Any],
+    n_chunks: int = 1,
 ) -> Tuple[List[np.ndarray], List[List[str]]]:
     """
     Converting sampled data to original input format such that,
@@ -90,7 +87,8 @@ def convert_to_input_format(
     sampled_smiles = np.reshape(sampled_smiles, (-1, n_beams))
     target_smiles = np.reshape(target_smiles, (-1, n_beams))
 
-    assert target_smiles.shape[0] == n_samples
+    if n_chunks == 1:
+        assert target_smiles.shape[0] == n_samples
 
     # Sanity-check that target smiles are the same within beams
     for tgt_beams in target_smiles:
@@ -103,3 +101,10 @@ def convert_to_input_format(
     tgt_smiles_reform = batchify(target_smiles, batch_size)
 
     return smpl_smiles_reform, tgt_smiles_reform
+
+
+def set_output_files(args, chemformer):
+    if args.output_score_data and args.output_sampled_smiles:
+        for callback in chemformer.trainer.callbacks:
+            if hasattr(callback, "set_output_files"):
+                callback.set_output_files(args.output_score_data, args.output_sampled_smiles)

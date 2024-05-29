@@ -2,8 +2,7 @@
 from typing import Any, List, Optional, Tuple
 
 import torch
-
-from molbart.modules.tokenizer import ChemformerTokenizer, ListOfStrList, TokensMasker
+from molbart.utils.tokenizers import ChemformerTokenizer, ListOfStrList, TokensMasker
 
 
 class BatchEncoder:
@@ -64,16 +63,12 @@ class BatchEncoder:
         mask_tensor = torch.tensor(pad_mask, dtype=torch.bool).transpose(0, 1)
         return id_tensor, mask_tensor
 
-    def _check_seq_len(
-        self, tokens: ListOfStrList, mask: List[List[int]]
-    ) -> Tuple[ListOfStrList, List[List[int]]]:
+    def _check_seq_len(self, tokens: ListOfStrList, mask: List[List[int]]) -> Tuple[ListOfStrList, List[List[int]]]:
         """Warn user and shorten sequence if the tokens are too long, otherwise return original"""
 
         seq_len = max([len(ts) for ts in tokens])
         if seq_len > self._max_seq_len:
-            print(
-                f"WARNING -- Sequence length {seq_len} is larger than maximum sequence size"
-            )
+            print(f"WARNING -- Sequence length {seq_len} is larger than maximum sequence size")
 
             tokens_short = [ts[: self._max_seq_len] for ts in tokens]
             mask_short = [ms[: self._max_seq_len] for ms in mask]
@@ -108,9 +103,7 @@ def build_attention_mask(enc_length: int, dec_length: int) -> torch.Tensor:
     return mask
 
 
-def build_target_mask(
-    enc_length: int, dec_length: int, batch_size: int
-) -> torch.Tensor:
+def build_target_mask(enc_length: int, dec_length: int, batch_size: int) -> torch.Tensor:
     """
     Build the target mask for the unified model
 

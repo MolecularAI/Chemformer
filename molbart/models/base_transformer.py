@@ -52,9 +52,7 @@ class _AbsTransformerModel(pl.LightningModule):
         self.dropout = dropout
 
         if self.schedule == "transformer":
-            assert (
-                warm_up_steps is not None
-            ), "A value for warm_up_steps is required for transformer LR schedule"
+            assert warm_up_steps is not None, "A value for warm_up_steps is required for transformer LR schedule"
 
         # Additional args passed in to **kwargs in init will also be saved
         self.save_hyperparameters()
@@ -105,7 +103,7 @@ class _AbsTransformerModel(pl.LightningModule):
         model_output = self.forward(batch)
         loss = self._calc_loss(batch, model_output)
 
-        self.log("train_loss", loss, on_step=True, logger=True, sync_dist=True)
+        self.log("training_loss", loss, on_step=True, logger=True, sync_dist=True)
 
         return loss
 
@@ -118,28 +116,18 @@ class _AbsTransformerModel(pl.LightningModule):
 
             loss = self._calc_loss(batch, model_output)
             token_acc = self._calc_token_acc(batch, model_output)
-            perplexity = self._calc_perplexity(batch, model_output)
 
-            mol_strs, log_lhs = self.sample_molecules(
-                batch, sampling_alg=self.val_sampling_alg
-            )
+            sampled_smiles, _ = self.sample_molecules(batch, sampling_alg=self.val_sampling_alg)
 
-            metrics = self.sampler.compute_sampling_metrics(mol_strs, target_smiles)
+            sampled_metrics = self.sampler.compute_sampling_metrics(sampled_smiles, target_smiles)
 
-            mol_acc = torch.tensor(metrics["accuracy"], device=loss.device)
-            invalid = torch.tensor(metrics["fraction_invalid"], device=loss.device)
-
-            # Need to be logged for checkpointing callback
-            self.log("mol_acc", mol_acc, prog_bar=True, logger=True, sync_dist=True)
-
-            val_outputs = {
-                "val_loss": loss,
+            metrics = {
+                "validation_loss": loss,
                 "val_token_accuracy": token_acc,
-                "perplexity": perplexity,
-                "val_molecular_accuracy": mol_acc,
-                "val_invalid_smiles": invalid,
             }
-        return val_outputs
+
+            metrics.update(sampled_metrics)
+        return metrics
 
     def validation_epoch_end(self, outputs):
         avg_outputs = self._avg_dicts(outputs)
@@ -154,68 +142,30 @@ class _AbsTransformerModel(pl.LightningModule):
 
             loss = self._calc_loss(batch, model_output)
             token_acc = self._calc_token_acc(batch, model_output)
-            perplexity = self._calc_perplexity(batch, model_output)
-            mol_strs, log_lhs = self.sample_molecules(
-                batch, sampling_alg=self.test_sampling_alg
-            )
-            metrics = self.sampler.compute_sampling_metrics(mol_strs, target_smiles)
+            sampled_smiles, log_likelihoods = self.sample_molecules(batch, sampling_alg=self.test_sampling_alg)
 
-            test_outputs = {
-                "test_loss": loss.item(),
-                "test_token_acc": token_acc,
-                "test_perplexity": perplexity,
-                "test_invalid_smiles": metrics["invalid"],
-                "sampled_molecules": mol_strs,
-                "log_lhs": log_lhs,
-                "target_smiles": target_smiles,
-            }
+        sampled_metrics = self.sampler.compute_sampling_metrics(sampled_smiles, target_smiles)
 
-            if hasattr(self.sampler, "sample_molecules"):
-                test_outputs["test_molecular_accuracy"] = metrics["accuracy"]
-                test_outputs["top_Ks"] = metrics["top_Ks"]
-                test_outputs["fraction_invalid"] = metrics["fraction_invalid"]
-                test_outputs["fraction_unique"] = metrics["fraction_unique"]
-                test_outputs["similarity"] = metrics["similarity"]
-            else:
-                if self.test_sampling_alg == "greedy":
-                    test_outputs["test_molecular_accuracy"] = metrics["accuracy"]
+        metrics = {
+            "batch_idx": batch_idx,
+            "test_loss": loss.item(),
+            "test_token_accuracy": token_acc,
+            "log_lhs": log_likelihoods,
+            "sampled_molecules": sampled_smiles,
+            "target_smiles": target_smiles,
+        }
 
-                elif self.test_sampling_alg == "beam":
-                    test_outputs["test_molecular_accuracy"] = metrics["top_1_accuracy"]
-                    test_outputs["test_molecular_top_1_accuracy"] = metrics[
-                        "top_1_accuracy"
-                    ]
-                    test_outputs["test_molecular_top_2_accuracy"] = metrics[
-                        "top_2_accuracy"
-                    ]
-                    test_outputs["test_molecular_top_3_accuracy"] = metrics[
-                        "top_3_accuracy"
-                    ]
-                    test_outputs["test_molecular_top_5_accuracy"] = metrics[
-                        "top_5_accuracy"
-                    ]
-                    test_outputs["test_molecular_top_10_accuracy"] = metrics[
-                        "top_10_accuracy"
-                    ]
-
-                else:
-                    raise ValueError(
-                        f"Unknown test sampling algorithm, {self.test_sampling_alg}"
-                    )
-
-        for key, val in test_outputs.items():
-            self.log(key, val, logger=True, sync_dist=True, on_step=True)
-        return test_outputs
+        metrics.update(sampled_metrics)
+        return metrics
 
     def test_epoch_end(self, outputs):
-        avg_outputs = self._avg_dicts(outputs)
-        self._log_dict(avg_outputs)
+        # avg_outputs = self._avg_dicts(outputs)
+        # self._log_dict(avg_outputs)
+        return
 
     def configure_optimizers(self):
         params = self.parameters()
-        optim = torch.optim.Adam(
-            params, lr=self.lr, weight_decay=self.weight_decay, betas=(0.9, 0.999)
-        )
+        optim = torch.optim.Adam(params, lr=self.lr, weight_decay=self.weight_decay, betas=(0.9, 0.999))
 
         if self.schedule == "const":
             print("Using constant LR schedule.")
@@ -270,10 +220,7 @@ class _AbsTransformerModel(pl.LightningModule):
 
         encs = torch.tensor([dim / self.d_model for dim in range(0, self.d_model, 2)])
         encs = 10000**encs
-        encs = [
-            (torch.sin(pos / encs), torch.cos(pos / encs))
-            for pos in range(self.max_seq_len)
-        ]
+        encs = [(torch.sin(pos / encs), torch.cos(pos / encs)) for pos in range(self.max_seq_len)]
         encs = [torch.stack(enc, dim=1).flatten()[: self.d_model] for enc in encs]
         encs = torch.stack(encs)
         return encs
@@ -292,11 +239,7 @@ class _AbsTransformerModel(pl.LightningModule):
         """
 
         mask = (torch.triu(torch.ones((sz, sz), device=device)) == 1).transpose(0, 1)
-        mask = (
-            mask.float()
-            .masked_fill(mask == 0, float("-inf"))
-            .masked_fill(mask == 1, float(0.0))
-        )
+        mask = mask.float().masked_fill(mask == 0, float("-inf")).masked_fill(mask == 1, float(0.0))
         return mask
 
     def _init_params(self):

@@ -11,14 +11,11 @@ import torch
 from pysmilesutils.augment import SMILESAugmenter
 from pysmilesutils.datautils import TokenSampler
 from rdkit import Chem
-from torch.utils.data import DataLoader, Dataset
+from torch.utils.data import DataLoader, Dataset, SequentialSampler
+from pysmilesutils.datautils import ChunkBatchSampler
 
-from molbart.modules.data.util import (
-    BatchEncoder,
-    build_attention_mask,
-    build_target_mask,
-)
-from molbart.modules.tokenizer import ChemformerTokenizer, TokensMasker
+from molbart.data.util import BatchEncoder, build_attention_mask, build_target_mask
+from molbart.utils.tokenizers import ChemformerTokenizer, TokensMasker
 
 
 class ChemistryDataset(Dataset):
@@ -92,6 +89,8 @@ class _AbsDataModule(pl.LightningDataModule):
         split_perc: float = 0.2,
         pin_memory: bool = True,
         unified_model: bool = False,
+        i_chunk: int = 0,
+        n_chunks: int = 1,
         **kwargs,
     ) -> None:
         super().__init__()
@@ -130,20 +129,25 @@ class _AbsDataModule(pl.LightningDataModule):
         self.val_dataset = None
         self.test_dataset = None
 
+        self.i_chunk = i_chunk
+        self.n_chunks = n_chunks
+
+        if self.n_chunks > 1:
+            print("Using chunk of data:")
+            print(f"- i_chunk: {i_chunk}, n_chunks: {n_chunks}")
+
         self._all_data: Dict[str, Any] = {}
 
     def train_dataloader(self) -> DataLoader:
         """Returns the DataLoader for the training set"""
         if self.train_token_batch_size is None:
-            loader = DataLoader(
-                self.train_dataset,
-                batch_size=self.batch_size,
-                num_workers=self._num_workers,
-                collate_fn=self._collate,
-                shuffle=True,
-                pin_memory=self.pin_memory,
-            )
-            return loader
+            if self.n_chunks > 1:
+                # Should only be used for inference / postprocessing
+                dataloader = self._create_chunk_dataloader(self.train_dataset, self._collate)
+                return dataloader
+
+            dataloader = self._create_basic_dataloader(self.train_dataset, self._collate, shuffle=True)
+            return dataloader
 
         sampler = TokenSampler(
             self.num_buckets,
@@ -151,47 +155,45 @@ class _AbsDataModule(pl.LightningDataModule):
             self.train_token_batch_size,
             shuffle=True,
         )
-        loader = DataLoader(
+        dataloader = DataLoader(
             self.train_dataset,
             batch_sampler=sampler,
             num_workers=self._num_workers,
             collate_fn=self._collate,
             pin_memory=self.pin_memory,
         )
-        return loader
+        return dataloader
 
     def val_dataloader(self):
         """Returns the DataLoader for the validation set"""
-        loader = DataLoader(
-            self.val_dataset,
-            batch_size=self.batch_size,
-            num_workers=self._num_workers,
-            collate_fn=functools.partial(self._collate, train=False),
-            pin_memory=self.pin_memory,
-        )
-        return loader
+        if self.n_chunks > 1:
+            dataloader = self._create_chunk_dataloader(self.val_dataset, functools.partial(self._collate, train=False))
+            return dataloader
+
+        dataloader = self._create_basic_dataloader(self.val_dataset, functools.partial(self._collate, train=False))
+        return dataloader
 
     def test_dataloader(self):
         """Returns the DataLoader for the test set"""
-        loader = DataLoader(
-            self.test_dataset,
-            batch_size=self.batch_size,
-            num_workers=self._num_workers,
-            collate_fn=functools.partial(self._collate, train=False),
-            pin_memory=self.pin_memory,
-        )
-        return loader
+        if self.n_chunks > 1:
+            dataloader = self._create_chunk_dataloader(self.test_dataset, functools.partial(self._collate, train=False))
+            return dataloader
+
+        dataloader = self._create_basic_dataloader(self.test_dataset, functools.partial(self._collate, train=False))
+        return dataloader
 
     def full_dataloader(self, train=False):
-        """Returns a DataLoader for all the data"""
-        loader = DataLoader(
-            ChemistryDataset(self._all_data),
-            batch_size=self.batch_size,
-            num_workers=self._num_workers,
-            collate_fn=functools.partial(self._collate, train=train),
-            pin_memory=self.pin_memory,
+        """Returns the DataLoader for the test set"""
+        if self.n_chunks > 1:
+            dataloader = self._create_chunk_dataloader(
+                ChemistryDataset(self._all_data), functools.partial(self._collate, train=train)
+            )
+            return dataloader
+
+        dataloader = self._create_basic_dataloader(
+            ChemistryDataset(self._all_data), functools.partial(self._collate, train=train)
         )
-        return loader
+        return dataloader
 
     def setup(self, stage=None):
         """Load and split the dataset"""
@@ -204,9 +206,7 @@ class _AbsDataModule(pl.LightningDataModule):
     def _build_attention_mask(self, enc_length: int, dec_length: int) -> torch.Tensor:
         return build_attention_mask(enc_length, dec_length)
 
-    def _collate(
-        self, batch: List[Dict[str, Any]], train: bool = True
-    ) -> Dict[str, Any]:
+    def _collate(self, batch: List[Dict[str, Any]], train: bool = True) -> Dict[str, Any]:
         (
             encoder_ids,
             encoder_mask,
@@ -215,9 +215,7 @@ class _AbsDataModule(pl.LightningDataModule):
             smiles,
         ) = self._transform_batch(batch, train)
         if self.unified_model:
-            return self._make_unified_model_batch(
-                encoder_ids, encoder_mask, decoder_ids, decoder_mask, smiles
-            )
+            return self._make_unified_model_batch(encoder_ids, encoder_mask, decoder_ids, decoder_mask, smiles)
         return {
             "encoder_input": encoder_ids,
             "encoder_pad_mask": encoder_mask,
@@ -227,6 +225,32 @@ class _AbsDataModule(pl.LightningDataModule):
             "target_mask": decoder_mask.clone()[1:, :],
             "target_smiles": smiles,
         }
+
+    def _create_chunk_dataloader(self, dataset, collate_fn):
+        sampler = SequentialSampler(dataset)
+        batch_sampler = ChunkBatchSampler(
+            sampler=sampler, batch_size=self.batch_size, drop_last=False, i_chunk=self.i_chunk, n_chunks=self.n_chunks
+        )
+
+        dataloader = DataLoader(
+            dataset,
+            batch_sampler=batch_sampler,
+            num_workers=self._num_workers,
+            collate_fn=collate_fn,
+            pin_memory=self.pin_memory,
+        )
+        return dataloader
+
+    def _create_basic_dataloader(self, dataset, collate_fn, shuffle=False) -> DataLoader:
+        dataloader = DataLoader(
+            dataset,
+            batch_size=self.batch_size,
+            num_workers=self._num_workers,
+            collate_fn=collate_fn,
+            shuffle=shuffle,
+            pin_memory=self.pin_memory,
+        )
+        return dataloader
 
     def _load_all_data(self) -> None:
         raise NotImplementedError("Data loading is not implemented in base class")
@@ -258,9 +282,7 @@ class _AbsDataModule(pl.LightningDataModule):
 
         target = torch.cat((encoder_ids.clone()[:-1, :], decoder_ids.clone()), dim=0)
         target_mask = build_target_mask(enc_length, dec_length, batch_size)
-        target_mask = target_mask + (
-            torch.cat((encoder_mask[:-1, :], decoder_mask), dim=0)
-        )
+        target_mask = target_mask + (torch.cat((encoder_mask[:-1, :], decoder_mask), dim=0))
 
         return {
             "encoder_input": encoder_ids,
@@ -275,11 +297,7 @@ class _AbsDataModule(pl.LightningDataModule):
 
     def _set_split_indices_from_dataframe(self, df: pd.DataFrame) -> None:
         # Don't set idx if they were provided as input to the class
-        if (
-            self.val_idxs is not None
-            or self.test_idxs is not None
-            or self.train_idxs is not None
-        ):
+        if self.val_idxs is not None or self.test_idxs is not None or self.train_idxs is not None:
             return
 
         val_idxs = df.query("set in ['val','valid','validation']").index.tolist()
@@ -307,7 +325,6 @@ class _AbsDataModule(pl.LightningDataModule):
             self.val_idxs = []
         elif self.test_idxs is None:
             self.test_idxs = []
-        
 
         self.val_dataset = ChemistryDataset(_subsample_data(self.val_idxs))
         self.test_dataset = ChemistryDataset(_subsample_data(self.test_idxs))
@@ -316,7 +333,7 @@ class _AbsDataModule(pl.LightningDataModule):
             # Below assumes all that is not test and val is train if not specified.
             all_idxs = set(range(self._all_data_len()))
             self.train_idxs = all_idxs - set(self.val_idxs).union(set(self.test_idxs))
-        
+
         if self.train_idxs is None:
             self.train_idxs = []
         self.train_dataset = ChemistryDataset(_subsample_data(self.train_idxs))
@@ -324,12 +341,10 @@ class _AbsDataModule(pl.LightningDataModule):
     def _transform_batch(
         self, batch: List[Dict[str, Any]], train: bool
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, List[str]]:
-        raise NotImplementedError(
-            "Batch transformation is not implemented in base class"
-        )
+        raise NotImplementedError("Batch transformation is not implemented in base class")
 
 
-class SimpleMolListDataModule(_AbsDataModule):
+class MoleculeListDataModule(_AbsDataModule):
     """
     DataModule that is used for sampling molecules. Can be
     used as base class for other DataModules that samples molecules.
@@ -361,7 +376,7 @@ class SimpleMolListDataModule(_AbsDataModule):
     def __init__(
         self,
         task: str = "mask",
-        augment: bool = True,
+        augment_prob: float = 0.0,
         masker: TokensMasker = None,
         **kwargs,
     ):
@@ -369,12 +384,10 @@ class SimpleMolListDataModule(_AbsDataModule):
         if "mask" in task and TokensMasker is None:
             raise ValueError(f"Need to provide a masker with task = {task}")
 
-        self._augmenter = SMILESAugmenter()
-        self._encoder = BatchEncoder(
-            tokenizer=self.tokenizer, masker=masker, max_seq_len=self.max_seq_len
-        )
+        self._augmenter = SMILESAugmenter(augment_prob=augment_prob)
+        self._encoder = BatchEncoder(tokenizer=self.tokenizer, masker=masker, max_seq_len=self.max_seq_len)
         self.task = task
-        self.augment = augment
+        self.augment = augment_prob > 0.0
 
     def _augment_batch(self, batch: List[str]) -> Tuple[List[str], List[str]]:
         if self.augment:
@@ -409,7 +422,7 @@ class SimpleMolListDataModule(_AbsDataModule):
         return encoder_ids, encoder_mask, decoder_ids, decoder_mask, canon_targets
 
 
-class SimpleReactionListDataModule(_AbsDataModule):
+class ReactionListDataModule(_AbsDataModule):
     """
     DataModule that is used for sampling reactions. It also serves
     as the base class for other DataModules that samples sequences
@@ -438,17 +451,13 @@ class SimpleReactionListDataModule(_AbsDataModule):
     def __init__(self, augment_prob: float = 0.0, reverse: bool = False, **kwargs):
         super().__init__(**kwargs)
         self._batch_augmenter = SMILESAugmenter(augment_prob=augment_prob)
-        self._encoder = BatchEncoder(
-            tokenizer=self.tokenizer, masker=None, max_seq_len=self.max_seq_len
-        )
+        self._encoder = BatchEncoder(tokenizer=self.tokenizer, masker=None, max_seq_len=self.max_seq_len)
         self.reverse = reverse
 
     def _build_attention_mask(self, enc_length: int, dec_length: int) -> torch.Tensor:
         return build_attention_mask(enc_length - 1, dec_length + 1)
 
-    def _get_sequences(
-        self, batch: List[Dict[str, Any]], train: bool
-    ) -> Tuple[List[str], List[str]]:
+    def _get_sequences(self, batch: List[Dict[str, Any]], train: bool) -> Tuple[List[str], List[str]]:
         reactants = [item["reactants"] for item in batch]
         products = [item["products"] for item in batch]
 
@@ -472,12 +481,8 @@ class SimpleReactionListDataModule(_AbsDataModule):
         self, batch: List[Dict[str, Any]], train: bool
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, List[str]]:
         encoder_smiles, decoder_smiles = self._get_sequences(batch, train)
-        encoder_ids, encoder_mask = self._encoder(
-            encoder_smiles, add_sep_token=self.unified_model and not self.reverse
-        )
-        decoder_ids, decoder_mask = self._encoder(
-            decoder_smiles, add_sep_token=self.unified_model and self.reverse
-        )
+        encoder_ids, encoder_mask = self._encoder(encoder_smiles, add_sep_token=self.unified_model and not self.reverse)
+        decoder_ids, decoder_mask = self._encoder(decoder_smiles, add_sep_token=self.unified_model and self.reverse)
         if not self.reverse:
             return encoder_ids, encoder_mask, decoder_ids, decoder_mask, decoder_smiles
         return decoder_ids, decoder_mask, encoder_ids, encoder_mask, encoder_smiles

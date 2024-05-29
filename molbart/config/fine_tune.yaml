@@ -1,0 +1,69 @@
+# @package _global_
+
+defaults:
+  - plugins:
+    - deepspeed.yaml
+  - logger: tensorboard.yaml
+  - trainer: default.yaml
+  # override config either in this file or using experiment config
+  - _self_
+  - experiment: null # experiment configs allow for version control of specific hyperparameters
+
+# Setting
+output_directory: "tb_logs"
+deepspeed_config_path: "ds_config.json"
+
+
+# Trainer
+seed: 73
+resume: false
+batch_size: 64
+n_epochs: 50
+limit_val_batches: 1.0
+n_buckets: 24
+n_gpus: 1
+n_nodes: 1
+acc_batches: 8
+accelerator: null
+check_val_every_n_epoch: 1
+
+# Data
+data_path: null
+vocabulary_path: bart_vocab_downstream.json
+task: backward_prediction   # ["forward_prediction", "backward_prediction", "mol_opt"]]
+augmentation_probability: 0.0
+augmentation_strategy: null # Can be set to "all", "reactants", "products" when using synthesis datamodule
+data_device: cuda
+
+# Model
+model_path: null
+model_type: bart            # ["bart", "unified"]
+learning_rate: 0.001
+weight_decay: 0.0
+clip_grad: 1.0
+d_model: 512
+n_layers: 6
+n_heads: 8
+d_feedforward: 2048
+train_tokens: null
+train_mode: training
+n_beams: 1
+
+schedule: cycle
+warm_up_steps: 8000
+
+datamodule:
+  - SynthesisDataModule
+
+callbacks:
+  - LearningRateMonitor
+  - ModelCheckpoint:
+    - period: 1
+    - monitor: validation_loss
+  - ValidationScoreCallback
+  - StepCheckpoint
+  - OptLRMonitor
+
+scorers:
+  - FractionInvalidScore
+  - TopKAccuracyScore
