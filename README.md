@@ -243,7 +243,7 @@ Do Chemformers dream of organic matter? Evaluating a transformer model for multi
 <a id="2">[2]</a>
 Westerlund, A.M., Saigiridharan, L., Genheden, S., 2024. 
 Constrained synthesis planning with disconnection-aware transformer and multi-objective search, ChemRxiv
- [10.26434/chemrxiv-2024-c77p4](10.26434/chemrxiv-2024-c77p4)
+ [10.26434/chemrxiv-2024-c77p4](https://chemrxiv.org/engage/chemrxiv/article-details/664ee4c291aefa6ce1c4fc8d)
 
 ## References
 
