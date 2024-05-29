@@ -1,0 +1,3 @@
+_target_: pytorch_lightning.plugins.DeepSpeedPlugin
+
+config: ${deepspeed_config_path}

@@ -1,0 +1,16 @@
+reactants	products	set
+CC(C)(C)OC(=O)N1CC[C@H](N=[N+]=[N-])[C@H](F)C1	CC(C)(C)OC(=O)N1CC[C@H](N)[C@H](F)C1	test
+[N-]=[N+]=N[C@H]1CCN(C(OC(C)(C)C)=O)C[C@H]1F	CC(C)(C)OC(=O)N1CC[C@H](N)[C@H](F)C1	test
+[N-]=[N+]=N[C@H]1CCN(C(=O)OC(C)(C)C)C[C@H]1F	CC(C)(C)OC(=O)N1CC[C@H](N)[C@H](F)C1	test
+[N-]=[N+]=N[C@@H]1[C@H](F)CN(C(OC(C)(C)C)=O)CC1	CC(C)(C)OC(=O)N1CC[C@H](N)[C@H](F)C1	test
+[N-]=[N+]=N[C@@H]1[C@H](F)CN(C(=O)OC(C)(C)C)CC1	CC(C)(C)OC(=O)N1CC[C@H](N)[C@H](F)C1	test
+C1COCCN1.Nc1ncc(Br)nc1Br	Nc1ncc(Br)nc1N1CCOCC1	test
+n1c(Br)cnc(N)c1Br.C1COCCN1	Nc1ncc(Br)nc1N1CCOCC1	test
+n1c(Br)cnc(N)c1Br.C1CNCCO1	Nc1ncc(Br)nc1N1CCOCC1	test
+c1(Br)nc(Br)c(N)nc1.C1NCCOC1	Nc1ncc(Br)nc1N1CCOCC1	test
+c1(Br)nc(Br)c(N)nc1.C1COCCN1	Nc1ncc(Br)nc1N1CCOCC1	test
+COC(=O)c1cc(Br)sc1N.O=C=NC(=O)C(Cl)(Cl)Cl	COC(=O)c1cc(Br)sc1NC(=O)NC(=O)C(Cl)(Cl)Cl	test
+O=C=NC(=O)C(Cl)(Cl)Cl.c1(N)sc(Br)cc1C(OC)=O	COC(=O)c1cc(Br)sc1NC(=O)NC(=O)C(Cl)(Cl)Cl	test
+O=C=NC(=O)C(Cl)(Cl)Cl.c1(N)sc(Br)cc1C(=O)OC	COC(=O)c1cc(Br)sc1NC(=O)NC(=O)C(Cl)(Cl)Cl	test
+O=C=NC(=O)C(Cl)(Cl)Cl.c1(N)c(C(OC)=O)cc(Br)s1	COC(=O)c1cc(Br)sc1NC(=O)NC(=O)C(Cl)(Cl)Cl	test
+O=C=NC(=O)C(Cl)(Cl)Cl.c1(Br)cc(C(=O)OC)c(N)s1	COC(=O)c1cc(Br)sc1NC(=O)NC(=O)C(Cl)(Cl)Cl	test

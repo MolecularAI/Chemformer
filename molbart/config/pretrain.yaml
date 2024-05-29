@@ -1,0 +1,61 @@
+# @package _global_
+
+defaults:
+  # override config either in this file or using experiment config
+  - _self_
+  - experiment: null # experiment configs allow for version control of specific hyperparameters
+
+
+# Setting
+output_directory: "tb_logs"
+deepspeed_config_path: "ds_config.json"
+
+# Trainer
+seed: 37
+resume: false
+batch_size: 128
+n_epochs: 10
+limit_val_batches: 1.0
+n_gpus: 1
+n_nodes: 1
+acc_batches: 1
+
+# Data
+data_path: null             # Required
+vocabulary_path: bart_vocab.json
+dataset_type: chembl        # [chembl, zinc]
+task: mask_aug              # [mask_aug]
+mask_scheme: span            # ["span", "replace"]
+mask_prob: 0.10
+augmentation_probability: 0.0
+data_device: cuda
+n_buckets: 12
+
+# Model
+model_path: null
+model_type: bart            # ["bart", "unified"]
+learning_rate: 1.0
+max_seq_len: 512
+d_model: 512
+n_layers: 6
+n_heads: 8
+d_feedforward: 2048
+activation: "gelu"
+train_tokens: null
+weight_decay: 0.0
+clip_grad: 1.0
+schedule: transformer
+warm_up_steps: 8000
+train_mode: training
+n_beams: 1
+
+
+callbacks:
+  - LearningRateMonitor
+  - ModelCheckpoint:
+    - period: 1
+    - monitor: val_loss
+  - MetricsCallback
+  - StepCheckpoint:
+    - step_interval: 50000
+  - OptLRMonitor

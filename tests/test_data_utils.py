@@ -1,5 +1,5 @@
-from molbart.modules.data.util import BatchEncoder
-from molbart.modules.tokenizer import ReplaceTokensMasker
+from molbart.data.util import BatchEncoder
+from molbart.utils.tokenizers import ReplaceTokensMasker
 
 
 def test_encoder_no_masking(setup_tokenizer):
@@ -12,9 +12,7 @@ def test_encoder_no_masking(setup_tokenizer):
     assert tuple(id_tensor.shape) == (9, 2)
     assert tuple(mask_tensor.shape) == (9, 2)
 
-    assert id_tensor[:, 0].tolist()[1:-1] == [
-        tokenizer[token] for token in smiles_list[0]
-    ]
+    assert id_tensor[:, 0].tolist()[1:-1] == [tokenizer[token] for token in smiles_list[0]]
     assert id_tensor[0, 0] == tokenizer[tokenizer.special_tokens["start"]]
     assert id_tensor[-1, 0] == tokenizer[tokenizer.special_tokens["end"]]
 
@@ -65,9 +63,7 @@ def test_encoder_with_size_limit(setup_tokenizer):
     assert tuple(id_tensor.shape) == (7, 2)
     assert tuple(mask_tensor.shape) == (7, 2)
 
-    assert id_tensor[:, 0].tolist()[1:] == [
-        tokenizer[token] for token in smiles_list[0][:-1]
-    ]
+    assert id_tensor[:, 0].tolist()[1:] == [tokenizer[token] for token in smiles_list[0][:-1]]
     assert id_tensor[0, 0] == tokenizer[tokenizer.special_tokens["start"]]
     assert id_tensor[-1, 0] != tokenizer[tokenizer.special_tokens["end"]]
 

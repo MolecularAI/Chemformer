@@ -13,9 +13,7 @@ class PreNormEncoderLayer(nn.TransformerEncoderLayer):
     def forward(self, src, src_mask=None, src_key_padding_mask=None):
         # Self attention block
         att = self.norm1(src)
-        att = self.self_attn(
-            att, att, att, attn_mask=src_mask, key_padding_mask=src_key_padding_mask
-        )[0]
+        att = self.self_attn(att, att, att, attn_mask=src_mask, key_padding_mask=src_key_padding_mask)[0]
         att = src + self.dropout1(att)
 
         # Feedforward block

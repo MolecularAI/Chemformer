@@ -1,0 +1,13 @@
+# @package _global_
+
+defaults:
+  # override config either in this file or using experiment config
+  - _self_
+  - experiment: null # experiment configs allow for version control of specific hyperparameters
+
+data_path: null
+smiles_column: canonical_smiles
+mol_opt_tokens_path: mol_opt_tokens.txt
+prop_pred_tokens_path: prop_pred_tokens.txt
+num_unused_tokens: 200
+tokeniser_path: null

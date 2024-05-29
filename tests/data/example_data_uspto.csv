@@ -1,0 +1,4 @@
+reactants	products	set
+CC(C)(C)OC(=O)N1CC[C@H](NCc2ccccc2)[C@H](F)C1	CC(C)(C)OC(=O)N1CC[C@H](N)[C@H](F)C1	test
+Nc1ncc(Br)nc1Br.C1COCCN1	Nc1ncc(Br)nc1N1CCOCC1	test
+COC(=O)c1ccsc1NC(=O)NC(=O)C(Cl)(Cl)Cl.BrBr	COC(=O)c1cc(Br)sc1NC(=O)NC(=O)C(Cl)(Cl)Cl	test

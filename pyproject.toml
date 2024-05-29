@@ -1,0 +1,53 @@
+[tool.poetry]
+name = "chemformer"
+version = "2.1.0"
+description = "Smiles-based synthesis prediction."
+authors = ["Irwin, Ross <ross.irwin1@astrazeneca.com>"]
+maintainers = [
+    "Westerlund, Annie <annie.westerlund@astrazeneca.com>",
+    "Saigiridharan, Lakshidaa <lakshidaa.saigiridharan@astrazeneca.com>",
+    "Peter Hartog <peter.hartog@astrazeneca.com>",
+    "Genheden, Samuel <samuel.genheden@astrazeneca.com>",
+]
+license = "Apache 2.0"
+
+packages = [{ include = "molbart" }]
+
+[tool.poetry.dependencies]
+python = "3.7.11"
+rdkit = "2022.9.3"
+torch = "1.8.1"
+pytorch-lightning = "1.2.3"
+pysmilesutils = { git = "https://github.com/MolecularAI/pysmilesutils.git" }
+hydra-core = "^1.3.2"
+hydra-colorlog = "^1.2.0"
+hydra-optuna-sweeper = "^1.2.0"
+fastapi = "0.98.0"
+pandas = "1.3.5"
+
+
+[tool.poetry.dev-dependencies]
+pre-commit = "*"
+pytest = "*"
+pytest-cov = "*"
+black = "*"
+isort = "*"
+flake8 = "*"
+mypy = "*"
+
+[tool.poetry.group.extras.dependencies]
+wandb = "^0.16.5"
+textbrewer = "^0.2.1.post1"
+eco2ai = "^0.3.9"
+
+
+[tool.poetry.group.dev.dependencies]
+pytest-mock = "3.10.0"
+pytest-datadir = "1.4.1"
+
+[build-system]
+requires = ["poetry-core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.black]
+line-length = 120

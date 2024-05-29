@@ -1,0 +1,53 @@
+# @package _global_
+
+defaults:
+  - trainer: inference.yaml
+  - plugins: null
+  # override config either in this file or using experiment config
+  - _self_
+  - experiment: null # experiment configs allow for version control of specific hyperparameters
+
+
+# Trainer
+seed: 1
+batch_size: 120
+n_gpus: 1
+
+# Data
+input_data: null
+backward_predictions: null
+dataset_part: test # Which dataset split to run inference on. ["full", "train", "val", "test"]
+
+vocabulary_path: null
+working_directory: .
+target_column: products
+i_chunk: 0
+n_chunks: 1
+data_device: cuda
+
+# Output files
+output_score_data: null
+output_sampled_smiles: null
+
+# Model args
+model_path: null
+model_type: bart            # ["bart", "unified"]
+train_mode: eval
+
+# Fixed arguments for round-trip inference (do not change)
+data_path: null # Placeholder argument
+n_beams: 1
+task: "forward_prediction"
+
+datamodule:
+  - SynthesisDataModule
+
+callbacks:
+  - ScoreCallback
+
+scorers:
+  - FractionInvalidScore
+  - FractionUniqueScore
+  - TanimotoSimilarityScore:
+    - statistics: mean
+  - TopKAccuracyScore
