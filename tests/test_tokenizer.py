@@ -1,4 +1,4 @@
-from molbart.modules.tokenizer import ChemformerTokenizer, ReplaceTokensMasker
+from molbart.utils.tokenizers import ChemformerTokenizer, ReplaceTokensMasker
 
 
 def test_create_vocab(setup_tokenizer):
@@ -107,7 +107,7 @@ def test_mask_tokens_replace(setup_masker, mock_random_choice, example_tokens):
 
 
 def test_mask_tokens_span(setup_masker, mock_random_choice, mocker, example_tokens):
-    patched_poisson = mocker.patch("molbart.modules.tokenizer.torch.poisson")
+    patched_poisson = mocker.patch("molbart.utils.tokenizers.tokenizers.torch.poisson")
     patched_poisson.return_value.long.return_value.item.side_effect = [3, 3, 2, 3]
     _, masker = setup_masker()
     masked, token_mask = masker(example_tokens)
@@ -121,9 +121,7 @@ def test_mask_tokens_span(setup_masker, mock_random_choice, mocker, example_toke
 
 
 def test_convert_tokens_to_ids(regex_tokens, smiles_data, example_tokens):
-    tokeniser = ChemformerTokenizer(
-        smiles=smiles_data[2:3], regex_token_patterns=regex_tokens
-    )
+    tokeniser = ChemformerTokenizer(smiles=smiles_data[2:3], regex_token_patterns=regex_tokens)
     ids = tokeniser.convert_tokens_to_ids(example_tokens)
     expected_ids = [[2, 6, 7, 8, 9, 10, 1, 3], [2, 6, 6, 5, 6, 11, 3]]
 

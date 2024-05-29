@@ -1,13 +1,13 @@
 import pandas as pd
 import pytest
 
-from molbart.modules.data.base import (
+from molbart.data.base import (
     ChemistryDataset,
-    SimpleMolListDataModule,
-    SimpleReactionListDataModule
+    MoleculeListDataModule,
+    ReactionListDataModule,
 )
-from molbart.modules.data.seq2seq_data import SynthesisDataModule
-from molbart.modules.tokenizer import ReplaceTokensMasker
+from molbart.data.datamodules import SynthesisDataModule
+from molbart.utils.tokenizers import ReplaceTokensMasker
 
 
 @pytest.fixture
@@ -48,7 +48,7 @@ def create_synthesis_data_file(tmpdir):
             "COC(=O)c1cc(Br)sc1NC(=O)NC(=O)C(Cl)(Cl)Cl",
             "O=S(=O)(c1ccccc1)N1CCNCC1",
             "O=Cc1cc(Br)ccc1OCc1ccccc1",
-            "C[Si](C)(C)CCOCn1ccc2cc(Br)ccc21"
+            "C[Si](C)(C)CCOCn1ccc2cc(Br)ccc21",
         ]
         reactants = [
             "CC(C)(C)OC(=O)N1CC[C@H](NCc2ccccc2)[C@H](F)C1",
@@ -56,7 +56,7 @@ def create_synthesis_data_file(tmpdir):
             "COC(=O)c1ccsc1NC(=O)NC(=O)C(Cl)(Cl)Cl.BrBr",
             "O=S(=O)(Cl)c1ccccc1.C1CNCCN1",
             "BrCc1ccccc1.O=Cc1cc(Br)ccc1O",
-            "C[Si](C)(C)CCOCCl.Brc1ccc2[nH]ccc2c1"
+            "C[Si](C)(C)CCOCCl.Brc1ccc2[nH]ccc2c1",
         ]
 
         data = pd.DataFrame(
@@ -120,7 +120,7 @@ def test_dataset_with_len():
 
 def test_create_mol_datamodule(create_smiles_file, setup_tokenizer):
     dataset_path = create_smiles_file()
-    dm = SimpleMolListDataModule(
+    dm = MoleculeListDataModule(
         dataset_path=dataset_path,
         tokenizer=setup_tokenizer(),
         batch_size=2,
@@ -150,7 +150,7 @@ def test_create_synthesis_datamodule(create_synthesis_data_file, setup_tokenizer
             len(dm.train_dataloader()),
             len(dm.test_dataloader()),
             len(dm.val_dataloader()),
-            len(dm.full_dataloader())
+            len(dm.full_dataloader()),
         ]
     )
 
@@ -158,11 +158,11 @@ def test_create_synthesis_datamodule(create_synthesis_data_file, setup_tokenizer
     assert len(dm.test_dataloader()) == 2
     assert len(dm.val_dataloader()) == 1
     assert len(dm.full_dataloader()) == 6
-    
+
 
 def test_create_mol_datamodule_test_idxs(create_smiles_file, setup_tokenizer):
     dataset_path = create_smiles_file()
-    dm = SimpleMolListDataModule(
+    dm = MoleculeListDataModule(
         dataset_path=dataset_path,
         tokenizer=setup_tokenizer(),
         batch_size=2,
@@ -181,7 +181,7 @@ def test_create_mol_datamodule_test_idxs(create_smiles_file, setup_tokenizer):
 
 def test_create_mol_datamodule_val_idxs(create_smiles_file, setup_tokenizer):
     dataset_path = create_smiles_file()
-    dm = SimpleMolListDataModule(
+    dm = MoleculeListDataModule(
         dataset_path=dataset_path,
         tokenizer=setup_tokenizer(),
         batch_size=2,
@@ -200,7 +200,7 @@ def test_create_mol_datamodule_val_idxs(create_smiles_file, setup_tokenizer):
 
 def test_create_mol_datamodule_test_val_idxs(create_smiles_file, setup_tokenizer):
     dataset_path = create_smiles_file()
-    dm = SimpleMolListDataModule(
+    dm = MoleculeListDataModule(
         dataset_path=dataset_path,
         tokenizer=setup_tokenizer(),
         batch_size=2,
@@ -227,19 +227,17 @@ def test_create_mol_datamodule_test_val_idxs(create_smiles_file, setup_tokenizer
         ("mask_aug", True),
     ],
 )
-def test_mol_datamodule_collation(
-    create_smiles_file, setup_masker, task, expect_mask_token
-):
+def test_mol_datamodule_collation(create_smiles_file, setup_masker, task, expect_mask_token):
     dataset_path = create_smiles_file()
     tokenizer, masker = setup_masker(ReplaceTokensMasker)
-    dm = SimpleMolListDataModule(
+    dm = MoleculeListDataModule(
         dataset_path=dataset_path,
         tokenizer=tokenizer,
         batch_size=10,
         max_seq_len=100,
         task=task,
         masker=masker,
-        augment=True,
+        augment_prob=0.5,
     )
     dm.setup()
 
@@ -285,13 +283,13 @@ def test_mol_datamodule_collation_overlap(create_smiles_file, setup_masker):
         "batch_size": 10,
         "max_seq_len": 100,
         "masker": masker,
-        "augment": False,
+        "augment_prob": 0.5,
     }
-    dm_mask = SimpleMolListDataModule(task="mask", **common_arg)
+    dm_mask = MoleculeListDataModule(task="mask", **common_arg)
     dm_mask.setup()
-    dm_aug = SimpleMolListDataModule(task="aug", **common_arg)
+    dm_aug = MoleculeListDataModule(task="aug", **common_arg)
     dm_aug.setup()
-    dm_aug_mask = SimpleMolListDataModule(task="aug_mask", **common_arg)
+    dm_aug_mask = MoleculeListDataModule(task="aug_mask", **common_arg)
     dm_aug_mask.setup()
 
     batch_mask = next(iter(dm_mask.full_dataloader()))
@@ -299,12 +297,8 @@ def test_mol_datamodule_collation_overlap(create_smiles_file, setup_masker):
     batch_aug_mask = next(iter(dm_aug_mask.full_dataloader()))
 
     assert batch_mask["encoder_input"].tolist() != batch_aug["encoder_input"].tolist()
-    assert (
-        batch_mask["encoder_input"].tolist() != batch_aug_mask["encoder_input"].tolist()
-    )
-    assert (
-        batch_aug["encoder_input"].tolist() != batch_aug_mask["encoder_input"].tolist()
-    )
+    assert batch_mask["encoder_input"].tolist() != batch_aug_mask["encoder_input"].tolist()
+    assert batch_aug["encoder_input"].tolist() != batch_aug_mask["encoder_input"].tolist()
 
     assert batch_mask["target"].tolist() != batch_aug["target"].tolist()
     assert batch_mask["target"].tolist() != batch_aug_mask["target"].tolist()
@@ -314,14 +308,14 @@ def test_mol_datamodule_collation_overlap(create_smiles_file, setup_masker):
 def test_mol_datamodule_unified_collation(create_smiles_file, setup_masker):
     dataset_path = create_smiles_file()
     tokenizer, masker = setup_masker(ReplaceTokensMasker)
-    dm = SimpleMolListDataModule(
+    dm = MoleculeListDataModule(
         dataset_path=dataset_path,
         tokenizer=tokenizer,
         batch_size=10,
         max_seq_len=100,
         task="mask",
         masker=masker,
-        augment=False,
+        augment_prob=0.0,
         unified_model=True,
     )
     dm.setup()
@@ -352,7 +346,7 @@ def test_mol_datamodule_unified_collation(create_smiles_file, setup_masker):
 
 def test_rxn_datamodule_collation(create_reactions_file, setup_tokenizer):
     dataset_path = create_reactions_file()
-    dm = SimpleReactionListDataModule(
+    dm = ReactionListDataModule(
         dataset_path=dataset_path,
         tokenizer=setup_tokenizer(),
         batch_size=10,
@@ -384,14 +378,14 @@ def test_rxn_datamodule_collation(create_reactions_file, setup_tokenizer):
 
 def test_rxn_datamodule_reverse(create_reactions_file, setup_tokenizer):
     dataset_path = create_reactions_file()
-    dm = SimpleReactionListDataModule(
+    dm = ReactionListDataModule(
         dataset_path=dataset_path,
         tokenizer=setup_tokenizer(),
         batch_size=10,
         max_seq_len=100,
     )
     dm.setup()
-    dm_reverse = SimpleReactionListDataModule(
+    dm_reverse = ReactionListDataModule(
         dataset_path=dataset_path,
         tokenizer=setup_tokenizer(),
         batch_size=10,
@@ -403,11 +397,5 @@ def test_rxn_datamodule_reverse(create_reactions_file, setup_tokenizer):
     batch = next(iter(dm.full_dataloader()))
     batch_reverse = next(iter(dm_reverse.full_dataloader()))
 
-    assert (
-        batch["encoder_input"][1:, :].tolist()
-        != batch_reverse["decoder_input"].tolist()
-    )
-    assert (
-        batch["decoder_input"].tolist()
-        != batch_reverse["encoder_input"][1:, :].tolist()
-    )
+    assert batch["encoder_input"][1:, :].tolist() != batch_reverse["decoder_input"].tolist()
+    assert batch["decoder_input"].tolist() != batch_reverse["encoder_input"][1:, :].tolist()
