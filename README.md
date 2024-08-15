@@ -1,8 +1,8 @@
 # Chemformer
-This repository contains the code used to generate the results in the Chemformer papers [[1]](#1) [[2]](#2).
+This repository contains the code used to generate the results in the Chemformer papers [[1]](#1) [[2]](#2) [[3]](#3).
 
-The Chemformer project aimed to pre-train a BART transformer language model [[3]](#3) on molecular SMILES strings [[4]](#4) by optimising a de-noising objective. We hypothesized that pre-training would lead to improved generalisation, performance, training speed and validity on downstream fine-tuned tasks. 
-The pre-trained model was tested on downstream tasks such as reaction prediction, retrosynthetic prediction, molecular optimisation and molecular property prediction in our original manuscript [[1]](#1). Our synthesis-prediction (seq2seq) Chemformer was evaluated for the purpose of single- and multi-step retrosynthesis [[2]](#2).
+The Chemformer project aimed to pre-train a BART transformer language model [[4]](#4) on molecular SMILES strings [[5]](#5) by optimising a de-noising objective. We hypothesized that pre-training would lead to improved generalisation, performance, training speed and validity on downstream fine-tuned tasks. 
+The pre-trained model was tested on downstream tasks such as reaction prediction, retrosynthetic prediction, molecular optimisation and molecular property prediction in our original manuscript [[1]](#1). Our synthesis-prediction (seq2seq) Chemformer was evaluated for the purpose of single- and multi-step retrosynthesis [[2]](#2), and used for disconnection-aware retrosynthesis [[3]](#3).
 
 The public models and datasets available [here](https://az.box.com/s/7eci3nd9vy0xplqniitpk02rbg9q2zcq). To run these models with the new version, you first need to update the checkpoint, e.g.:
 ```
@@ -171,6 +171,24 @@ For running the disconnection-aware Chemformer, run the following (RXN-mapper sh
     export RXNUTILS_ENV_PATH={PATH TO rxnutils CONDA ENV} # See https://github.com/MolecularAI/reaction_utils on how to create an environment
     python chemformer_disconnect_service.py
 ```
+
+### Workflow for fine-tuning and running disconnection-aware Chemformer in AiZynthFinder
+Example workflow for running multi-step retrosynthesis with a disconnection-aware Chemformer [[3]](#3). First, create training dataset (tag disconnection sites with [AiZynthTrain](https://github.com/MolecularAI/aizynthtrain)):
+```
+python -m aizynthtrain.pipelines.disconnection_chemformer_data_prep_pipeline run --config tag_products_config.yml --max-workers 25 --max-num-splits 100 
+```
+where `tag_products_config.yml` contains the input `uspto_50k.csv` and output files on the format:
+```
+chemformer_data_prep:
+  chemformer_data_path: uspto_50k.csv
+  disconnection_aware_data_path: uspto_50k_disconnection.csv
+  autotag_data_path: uspto_50k_autotag.csv
+```
+1. Fine-tune Chemformer on `uspto_50k_disconnection.csv`.
+1. Run backward and round-trip inference.
+1. Start FastAPI service for disconnection-aware Chemformer.
+1. Run multi-step retrosynthesis search with [AiZynthFinder](https://github.com/MolecularAI/aizynthfinder) using the `expansion_strategies.DisconnectionAwareExpansionStrategy`. We refer the user to https://github.com/MolecularAI/aizynthfinder/tree/master/plugins for information on how to do this.
+
 ## Code structure
 
 The codebase is broadly split into the following parts:
@@ -240,19 +258,19 @@ Westerlund, A.M., Manohar Koki, S., Kancharla, S., Tibo, A., Saigiridharan, L., 
 Do Chemformers dream of organic matter? Evaluating a transformer model for multi-step retrosynthesis, J. Chem. Inf. Model.
  [https://pubs.acs.org/doi/10.1021/acs.jcim.3c01685](https://pubs.acs.org/doi/10.1021/acs.jcim.3c01685)
 
-<a id="2">[2]</a>
+<a id="3">[3]</a>
 Westerlund, A.M., Saigiridharan, L., Genheden, S., 2024. 
 Constrained synthesis planning with disconnection-aware transformer and multi-objective search, ChemRxiv
  [10.26434/chemrxiv-2024-c77p4](https://chemrxiv.org/engage/chemrxiv/article-details/664ee4c291aefa6ce1c4fc8d)
 
 ## References
 
-<a id="3">[3]</a>
+<a id="5">[4]</a>
 Lewis, Mike, et al.
 "Bart: Denoising sequence-to-sequence pre-training for natural language generation, translation, and comprehension."
 arXiv preprint arXiv:1910.13461 (2019).
 
-<a id="4">[4]</a>
+<a id="5">[5]</a>
 Weininger, David.
 "SMILES, a chemical language and information system. 1. Introduction to methodology and encoding rules."
 Journal of chemical information and computer sciences 28.1 (1988): 31-36.
