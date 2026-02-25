@@ -1,6 +1,6 @@
 #!/bin/bash
 
-python -m molbart.fine_tune \  
+python -m molbart.fine_tune \
   datamodule=[molbart.data.seq2seq_data.Uspto50DataModule] \
   data_path=data/uspto_50.pickle \
   model_path=models/bart/span_aug.ckpt \
